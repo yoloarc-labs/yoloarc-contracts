@@ -13,7 +13,7 @@ import "./StakingManagerStorage.sol";
 import "../interfaces/IYoloToken.sol";
 
 
-contract StakingManager is  Initializable, OwnableUpgradeable, PausableUpgradeable, ReentrancyGuard, StakingManagerStorage {
+contract StakingManager is Initializable, OwnableUpgradeable, PausableUpgradeable, ReentrancyGuard, StakingManagerStorage {
     using SafeERC20 for IERC20;
 
     uint256 public constant REDEEM_COOLDOWN = 7 days;
@@ -247,6 +247,32 @@ contract StakingManager is  Initializable, OwnableUpgradeable, PausableUpgradeab
 
     }
 
+    function claimReward() external {
+
+    }
+
+    function useStakingCredit(address user, uint256 _stakingRound, uint256 amount) external onlyManager whenNotPaused {
+        UserStaking storage stakingInfo = _getUserStaking(user, _stakingRound);
+        require(amount > 0, "StakingManager: amount is zero");
+        require(stakingInfo.creditLimit >= amount, "StakingManager: credit limit not enough");
+        stakingInfo.creditLimit -= amount;
+        emit StakingCreditUsed(user, _stakingRound, amount, stakingInfo.creditLimit);
+    }
+
+    function releaseStakingCredit(address user, uint256 _stakingRound, uint256 amount) external onlyManager whenNotPaused {
+        UserStaking storage stakingInfo = _getUserStaking(user, _stakingRound);
+        require(amount > 0, "StakingManager: amount is zero");
+        stakingInfo.creditLimit += amount;
+        emit StakingCreditReleased(user, _stakingRound, amount, stakingInfo.creditLimit);
+    }
+
+    function addStakingCredit(address user, uint256 _stakingRound, uint256 amount) external onlyManager whenNotPaused {
+        UserStaking storage stakingInfo = _getUserStaking(user, _stakingRound);
+        require(amount > 0, "StakingManager: amount is zero");
+        stakingInfo.creditLimit += amount;
+        emit StakingCreditAdded(user, _stakingRound, amount, stakingInfo.creditLimit);
+    }
+
     function _getUserStaking(address user, uint256 _stakingRound) internal view returns (UserStaking storage stakingInfo) {
         require(_stakingRound > 0 && _stakingRound <= stakingRound[user], "StakingManager: invalid staking round");
 
@@ -273,23 +299,17 @@ contract StakingManager is  Initializable, OwnableUpgradeable, PausableUpgradeab
         }
     }
 
-    function _getWithdrawSettlement(uint256 stakingTime, uint256 amount)
-        internal
-        view
-        returns (uint256 payoutAmount, uint256 slippageAmount)
-    {
+    function _getWithdrawSettlement(uint256 stakingTime, uint256 amount) internal view returns (uint256 payoutAmount, uint256 slippageAmount) {
+        uint256 slippageAmountInternal = 0;
         if (block.timestamp < stakingTime + REDEEM_COOLDOWN) {
-            slippageAmount = (amount * EARLY_REDEEM_SLIPPAGE_BPS) / BPS_DENOMINATOR;
+            slippageAmountInternal = (amount * EARLY_REDEEM_SLIPPAGE_BPS) / BPS_DENOMINATOR;
         }
 
+        slippageAmount = slippageAmountInternal;
         payoutAmount = amount - slippageAmount;
     }
 
-    function _getFreezeConfig(uint256 stakingPrice, uint256 currentPrice)
-        internal
-        pure
-        returns (uint256 frozenPercent, uint8 freezeLevel, bool platformTakenOver)
-    {
+    function _getFreezeConfig(uint256 stakingPrice, uint256 currentPrice) internal pure returns (uint256 frozenPercent, uint8 freezeLevel, bool platformTakenOver) {
         if (currentPrice >= stakingPrice) {
             return (0, 0, false);
         }

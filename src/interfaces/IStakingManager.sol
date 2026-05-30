@@ -61,6 +61,9 @@ interface IStakingManager {
         uint8 freezeLevel,
         bool platformTakenOver
     );
+    event StakingCreditUsed(address indexed stakingAddress, uint256 indexed stakingRound, uint256 amount, uint256 remainingCreditLimit);
+    event StakingCreditReleased(address indexed stakingAddress, uint256 indexed stakingRound, uint256 amount, uint256 remainingCreditLimit);
+    event StakingCreditAdded(address indexed stakingAddress, uint256 indexed stakingRound, uint256 amount, uint256 remainingCreditLimit);
 
     function setUnderlyingToken(address _underlyingToken) external;
     function depositAndStaking(uint256 amount) external payable;
@@ -71,4 +74,8 @@ interface IStakingManager {
     function getPendingWithdrawRequests(address user) external view returns (WithdrawRequestView[] memory pendingRequests);
     function getRedeemableAmount(address user, uint256 stakingRound) external view returns (uint256);
     function createReward(address lpAddress, uint256 round, uint256 tokenAmount, uint256 usdtAmount, uint8 incomeType) external;
+    function claimReward() external;
+    function useStakingCredit(address user, uint256 stakingRound, uint256 amount) external;
+    function releaseStakingCredit(address user, uint256 stakingRound, uint256 amount) external;
+    function addStakingCredit(address user, uint256 stakingRound, uint256 amount) external;
 }
