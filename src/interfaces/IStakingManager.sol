@@ -73,8 +73,6 @@ interface IStakingManager {
     function unfreezeStaking(uint256 stakingRound) external;
     function getPendingWithdrawRequests(address user) external view returns (WithdrawRequestView[] memory pendingRequests);
     function getRedeemableAmount(address user, uint256 stakingRound) external view returns (uint256);
-    function createReward(address lpAddress, uint256 round, uint256 tokenAmount, uint256 usdtAmount, uint8 incomeType) external;
-    function claimReward() external;
     function useStakingCredit(address user, uint256 stakingRound, uint256 amount) external;
     function releaseStakingCredit(address user, uint256 stakingRound, uint256 amount) external;
     function addStakingCredit(address user, uint256 stakingRound, uint256 amount) external;

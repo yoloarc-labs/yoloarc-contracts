@@ -243,14 +243,6 @@ contract StakingManager is Initializable, OwnableUpgradeable, PausableUpgradeabl
         return userStakingInfo[user][_stakingRound].stakingAmount;
     }
 
-    function createReward(address lpAddress, uint256 round, uint256 tokenAmount, uint256 usdtAmount, uint8 incomeType) external onlyStakingOperatorManager {
-
-    }
-
-    function claimReward() external {
-
-    }
-
     function useStakingCredit(address user, uint256 _stakingRound, uint256 amount) external onlyManager whenNotPaused {
         UserStaking storage stakingInfo = _getUserStaking(user, _stakingRound);
         require(amount > 0, "StakingManager: amount is zero");
