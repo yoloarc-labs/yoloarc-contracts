@@ -34,7 +34,7 @@ interface IStakingManager {
         bool claimed;
     }
 
-    event DepositAndStaking(address indexed stakingAddress, uint256 stakingAmount, uint256 stakingCredit);
+    event DepositAndStaking(address indexed stakingAddress, uint256 stakingAmount, uint256 stakingCredit, uint256 stakingRound);
     event RequestUnStakingWithdraw(
         address indexed stakingAddress,
         uint256 indexed withdrawRequestId,

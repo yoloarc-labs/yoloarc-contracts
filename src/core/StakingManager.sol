@@ -92,7 +92,7 @@ contract StakingManager is Initializable, OwnableUpgradeable, PausableUpgradeabl
 
         IERC20(underlyingToken).safeTransferFrom(msg.sender, address(this), amount);
 
-        emit DepositAndStaking(msg.sender, amount, creditLimit);
+        emit DepositAndStaking(msg.sender, amount, creditLimit, currentRound);
     }
 
     function requestUnStaking(uint256 _stakingRound, uint256 amount) external returns (uint256 withdrawRequestId) {
