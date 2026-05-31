@@ -69,7 +69,8 @@ interface IEventManager {
         EventResult selectedResult,
         uint256 amount,
         BetPaymentType paymentType,
-        uint256 stakingRound
+        uint256 stakingRound,
+        uint256 dayIndex
     );
     event EventResultSet(uint256 indexed eventId, EventResult result);
     event BetSettled(

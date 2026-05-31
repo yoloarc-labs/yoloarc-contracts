@@ -228,7 +228,8 @@ contract EventManager is Initializable, OwnableUpgradeable, PausableUpgradeable,
             }
         }
 
-        emit EventBetPlaced(betId, eventId, bettor, selectedResult, amount, paymentType, stakingRound);
+        uint256 dayIndex = block.timestamp / 1 days;
+        emit EventBetPlaced(betId, eventId, bettor, selectedResult, amount, paymentType, stakingRound, dayIndex);
     }
 
     function _settleTokenWin(
