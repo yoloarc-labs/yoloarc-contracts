@@ -76,7 +76,7 @@ contract StakingManager is Initializable, OwnableUpgradeable, PausableUpgradeabl
     function depositAndStaking(uint256 amount) external payable {
         uint256 yoloPrice = yoloTokenAddress.quote(1000000);
 
-        uint256 toUsdtAmount = amount * yoloPrice;
+        uint256 toUsdtAmount = amount * yoloPrice / 1e6;
 
         require(toUsdtAmount >= MIN_STAKING_AMOUNT, "StakingManager: depositAndStaking staking amount less min staking amount");
         uint256 creditLimit = (toUsdtAmount * 900) / 1000;
@@ -89,6 +89,8 @@ contract StakingManager is Initializable, OwnableUpgradeable, PausableUpgradeabl
         stakingInfo.creditLimit = creditLimit;
         stakingInfo.stakingTime = block.timestamp;
         stakingAmount[msg.sender] += amount;
+
+        IERC20(underlyingToken).safeTransferFrom(msg.sender, address(this), amount);
 
         emit DepositAndStaking(msg.sender, amount, creditLimit);
     }
