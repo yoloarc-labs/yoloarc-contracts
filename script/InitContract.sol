@@ -6,7 +6,6 @@ import {ProxyAdmin} from "@openzeppelin/contracts/proxy/transparent/ProxyAdmin.s
 import {EnvContract} from "./EnvContract.sol";
 import {MockERC20} from "./MockERC20.sol";
 import {YoloToken} from "../src/token/YoloToken.sol";
-import {StakingManager} from "../src/core/StakingManager.sol";
 import {EventManager} from "../src/core/EventManager.sol";
 import {DaoRewardManager} from "../src/token/allocation/DaoRewardManager.sol";
 import {FomoTreasureManager} from "../src/token/allocation/FomoTreasureManager.sol";
@@ -18,7 +17,6 @@ import {TechManager} from "../src/token/allocation/TechManager.sol";
 
 contract InitContract is EnvContract {
     YoloToken public yoloToken;
-    StakingManager public stakingManager;
     EventManager public eventManager;
     DaoRewardManager public daoRewardManager;
     FomoTreasureManager public fomoTreasureManager;
@@ -30,7 +28,6 @@ contract InitContract is EnvContract {
     MockERC20 public usdt;
 
     ProxyAdmin public yoloTokenProxyAdmin;
-    ProxyAdmin public stakingManagerProxyAdmin;
     ProxyAdmin public eventManagerProxyAdmin;
     ProxyAdmin public daoRewardManagerProxyAdmin;
     ProxyAdmin public fomoTreasureManagerProxyAdmin;
@@ -45,7 +42,6 @@ contract InitContract is EnvContract {
 
         usdt = MockERC20(payable(addresses.usdtTokenAddress));
         yoloToken = YoloToken(payable(addresses.proxyYoloToken));
-        stakingManager = StakingManager(payable(addresses.proxyStakingManager));
         eventManager = EventManager(payable(addresses.proxyEventManager));
         daoRewardManager = DaoRewardManager(payable(addresses.proxyDaoRewardManager));
         fomoTreasureManager = FomoTreasureManager(payable(addresses.proxyFomoTreasureManager));
@@ -56,7 +52,6 @@ contract InitContract is EnvContract {
         techManager = TechManager(payable(addresses.proxyTechManager));
 
         yoloTokenProxyAdmin = ProxyAdmin(getProxyAdminAddress(address(yoloToken)));
-        stakingManagerProxyAdmin = ProxyAdmin(getProxyAdminAddress(address(stakingManager)));
         eventManagerProxyAdmin = ProxyAdmin(getProxyAdminAddress(address(eventManager)));
         daoRewardManagerProxyAdmin = ProxyAdmin(getProxyAdminAddress(address(daoRewardManager)));
         fomoTreasureManagerProxyAdmin = ProxyAdmin(getProxyAdminAddress(address(fomoTreasureManager)));

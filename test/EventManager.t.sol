@@ -7,7 +7,6 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 
 import {EventManager} from "../src/core/EventManager.sol";
 import {IEventManager} from "../src/interfaces/IEventManager.sol";
-import {IStakingManager} from "../src/interfaces/IStakingManager.sol";
 import {IYoloToken} from "../src/interfaces/IYoloToken.sol";
 
 contract MockBetToken is ERC20 {
@@ -18,215 +17,207 @@ contract MockBetToken is ERC20 {
     }
 }
 
-contract MockYoloToken is IYoloToken {
-    function burn(address, uint256) external pure {}
+/// @dev Mock YOLO: ERC20-compatible (6 decimals) + IYoloToken hooks.
+/// quote(amount) reports how much USDT (18 decimals) you get for `amount` raw YOLO.
+/// Hard-coded price: 1 YOLO = 0.5 USDT.
+contract MockYoloToken is ERC20, IYoloToken {
+    constructor() ERC20("Yolo", "YOLO") {}
 
-    function quote(uint256) external pure returns (uint256) {
-        return 1;
-    }
-}
-
-contract MockStakingManager is IStakingManager {
-    mapping(address => mapping(uint256 => uint256)) public credits;
-
-    function useStakingCredit(address user, uint256 stakingRound, uint256 amount) external {
-        require(credits[user][stakingRound] >= amount, "MockStakingManager: credit not enough");
-        credits[user][stakingRound] -= amount;
+    function mint(address to, uint256 amount) external {
+        _mint(to, amount);
     }
 
-    function releaseStakingCredit(address user, uint256 stakingRound, uint256 amount) external {
-        credits[user][stakingRound] += amount;
+    function burn(address user, uint256 amount) external override {
+        _burn(user, amount);
     }
 
-    function addStakingCredit(address user, uint256 stakingRound, uint256 amount) external {
-        credits[user][stakingRound] += amount;
+    function decimals() public pure override returns (uint8) {
+        return 6;
     }
 
-    function setCredit(address user, uint256 stakingRound, uint256 amount) external {
-        credits[user][stakingRound] = amount;
+    /// 1 YOLO (1e6) -> 0.5 USDT-18 (5e17)
+    function quote(uint256 amount) external pure returns (uint256) {
+        return (amount * 5e17) / 1e6;
     }
-
-    function setUnderlyingToken(address) external {}
-    function depositAndStaking(uint256) external payable {}
-    function requestUnStaking(uint256, uint256) external returns (uint256) { return 0; }
-    function stakingWithdraw(uint256) external {}
-    function freezeStaking(uint256) external {}
-    function unfreezeStaking(uint256) external {}
-    function getPendingWithdrawRequests(address) external pure returns (WithdrawRequestView[] memory pendingRequests) { return pendingRequests; }
-    function getRedeemableAmount(address, uint256) external pure returns (uint256) { return 0; }
-    function createReward(address, uint256, uint256, uint256, uint8) external {}
-    function claimReward() external {}
 }
 
 contract EventManagerTest is Test {
     EventManager internal eventManager;
     MockBetToken internal betToken;
     MockYoloToken internal yoloToken;
-    MockStakingManager internal stakingManager;
 
     address internal manager = address(this);
     address internal owner = address(this);
     address internal user = address(0x1234);
-    address internal winner = address(0x1111);
-    address internal loser = address(0x2222);
 
     function setUp() public {
         betToken = new MockBetToken();
         yoloToken = new MockYoloToken();
-        stakingManager = new MockStakingManager();
 
         EventManager implementation = new EventManager();
         ERC1967Proxy proxy = new ERC1967Proxy(
             address(implementation),
             abi.encodeCall(
                 EventManager.initialize,
-                (owner, manager, address(0x1), address(0x2), IYoloToken(address(yoloToken)))
+                (owner, manager, address(0x1), IYoloToken(address(yoloToken)))
             )
         );
         eventManager = EventManager(payable(address(proxy)));
-        eventManager.setStakingManager(address(stakingManager));
     }
 
-    function testBetEventTransfersTokenAndRecordsBet() public {
-        eventManager.createEvent(1, block.timestamp, block.timestamp + 1 days, 100, address(betToken));
+    function testBetEventTransfersTokenAndYoloCollateral() public {
+        eventManager.createEvent(1, block.timestamp, block.timestamp + 1 days, 100, address(betToken), 18000, 25000);
+
+        // bet 250 USDT-18  =>  yolo collateral = 250 * 0.2 / 0.5 = 100 YOLO (1e8 raw)
         betToken.mint(user, 1000 ether);
+        yoloToken.mint(user, 100 * 1e6);
 
         vm.startPrank(user);
         betToken.approve(address(eventManager), 250 ether);
+        yoloToken.approve(address(eventManager), 100 * 1e6);
         eventManager.betEvent(1, 250 ether, IEventManager.EventResult.YES);
         vm.stopPrank();
 
-        assertEq(betToken.balanceOf(address(eventManager)), 250 ether);
+        assertEq(betToken.balanceOf(address(eventManager)), 250 ether, "usdt locked in contract");
+        assertEq(yoloToken.balanceOf(address(eventManager)), 100 * 1e6, "yolo collateral locked");
         assertEq(eventManager.nextBetId(), 2);
         assertEq(eventManager.eventYesAmount(1), 250 ether);
+        (, , , , , , , uint256 totalYoloAmount, , , , , , , , , ) = eventManager.events(1);
+        (, , , , , , uint256 betYoloAmount, ) = eventManager.betRecords(1);
+        assertEq(totalYoloAmount, 100 * 1e6, "event yolo amount");
+        assertEq(betYoloAmount, 100 * 1e6, "bet yolo amount");
         assertEq(eventManager.eventNoAmount(1), 0);
         assertEq(eventManager.getEventBetIds(1).length, 1);
         assertEq(eventManager.getUserBetIds(user).length, 1);
-
-        (
-            uint256 betId,
-            uint256 eventId,
-            address bettor,
-            IEventManager.EventResult selectedResult,
-            uint256 amount,
-            IEventManager.BetPaymentType paymentType,
-            uint256 stakingRound,
-            uint256 createdAt
-        ) = eventManager.betRecords(1);
-        assertEq(betId, 1);
-        assertEq(eventId, 1);
-        assertEq(bettor, user);
-        assertEq(uint256(selectedResult), uint256(IEventManager.EventResult.YES));
-        assertEq(amount, 250 ether);
-        assertEq(uint256(paymentType), uint256(IEventManager.BetPaymentType.TOKEN));
-        assertEq(stakingRound, 0);
-        assertEq(createdAt, block.timestamp);
     }
 
-    function testBetEventWithStakingConsumesCreditAndRecordsBet() public {
-        eventManager.createEvent(2, block.timestamp, block.timestamp + 1 days, 100, address(betToken));
-        stakingManager.setCredit(user, 3, 500 ether);
+    /// 7 YES bettors (stake 100 USDT each) vs 3 NO bettors (stake 1000 USDT each).
+    /// yesOdds=1.8 (18000), noOdds=2.5 (25000), settlementFeeRate=0.01 (100 bps).
+    /// Result: YES.
+    function testFinishEventDistributesRewardsWithYoloCollateral() public {
+        uint256 yesOdds = 18000; // 1.8x
+        uint256 noOdds  = 25000; // 2.5x
+        uint256 feeRate = 100;   // 1%
 
-        vm.prank(user);
-        eventManager.betEventWithStaking(2, 3, 200 ether, IEventManager.EventResult.NO);
+        uint256 yesStake = 100 ether;   // 100 USDT each
+        uint256 noStake  = 1000 ether;  // 1000 USDT each
 
-        assertEq(eventManager.nextBetId(), 2);
-        assertEq(eventManager.eventYesAmount(2), 0);
-        assertEq(eventManager.eventNoAmount(2), 200 ether);
-        assertEq(stakingManager.credits(user, 3), 300 ether);
-        assertEq(eventManager.getEventBetIds(2).length, 1);
+        // YOLO collateral per bet (yoloAmount = stake * 0.2 / 0.5 in YOLO units, 6 decimals):
+        //   YES (100 USDT)  ->  40 YOLO  (4e7 raw)
+        //   NO  (1000 USDT) -> 400 YOLO  (4e8 raw)
+        uint256 yesCollateral = 40 * 1e6;
+        uint256 noCollateral  = 400 * 1e6;
 
+        eventManager.createEvent(
+            1,
+            block.timestamp,
+            block.timestamp + 1 days,
+            feeRate,
+            address(betToken),
+            yesOdds,
+            noOdds
+        );
+
+        address[7] memory yesUsers;
+        for (uint256 i = 0; i < 7; i++) {
+            yesUsers[i] = address(uint160(0xA000 + i));
+            _bet(yesUsers[i], yesStake, yesCollateral, IEventManager.EventResult.YES);
+        }
+
+        address[3] memory noUsers;
+        for (uint256 i = 0; i < 3; i++) {
+            noUsers[i] = address(uint160(0xB000 + i));
+            _bet(noUsers[i], noStake, noCollateral, IEventManager.EventResult.NO);
+        }
+
+        // Pre-finish invariants
+        uint256 poolUsdt = 7 * yesStake + 3 * noStake; // 700 + 3000 = 3700 USDT
+        uint256 poolYolo = 7 * yesCollateral + 3 * noCollateral; // 280 + 1200 = 1480 YOLO (1.48e9 raw)
+        assertEq(betToken.balanceOf(address(eventManager)), poolUsdt, "pool usdt before finish");
+        assertEq(yoloToken.balanceOf(address(eventManager)), poolYolo, "pool yolo before finish");
+        assertEq(eventManager.eventYesAmount(1), 7 * yesStake);
+        assertEq(eventManager.eventNoAmount(1), 3 * noStake);
+
+        // Settle YES
+        vm.warp(block.timestamp + 2 days);
+        eventManager.setEventResult(1, IEventManager.EventResult.YES);
+        eventManager.finishEvent(1);
+
+        // ----- Expected per-YES-winner payout -----
+        //   reward   = stake * 1.8                          = 180 USDT
+        //   feeAmt   = reward * 1% = 180 * 0.01             = 1.8 USDT
+        //   payout   = stake + reward - feeAmt = 100+180-1.8= 278.2 USDT
+        uint256 expectedPayout = yesStake + (yesStake * yesOdds / 10000) - ((yesStake * yesOdds / 10000) * feeRate / 10000);
+        uint256 expectedFeePerWinner = (yesStake * yesOdds / 10000) * feeRate / 10000;
+        assertEq(expectedPayout, 278.2 ether, "sanity: payout per yes winner");
+        assertEq(expectedFeePerWinner, 1.8 ether, "sanity: fee per yes winner");
+
+        // YES winners: got USDT payout + YOLO collateral back
+        for (uint256 i = 0; i < 7; i++) {
+            assertEq(betToken.balanceOf(yesUsers[i]), expectedPayout, "yes winner usdt");
+            assertEq(yoloToken.balanceOf(yesUsers[i]), yesCollateral, "yes winner yolo back");
+        }
+
+        // NO losers: lost USDT, YOLO collateral returned
+        for (uint256 i = 0; i < 3; i++) {
+            assertEq(betToken.balanceOf(noUsers[i]), 0, "no loser usdt");
+            assertEq(yoloToken.balanceOf(noUsers[i]), noCollateral, "no loser yolo back");
+        }
+
+        // Contract bookkeeping:
+        //   total payouts to winners: 7 * 278.2 = 1947.4 USDT
+        //   total fees retained:      7 * 1.8   = 12.6 USDT
+        //   YOLO fully returned:      0 left in contract
+        //   USDT residual:            pool - payouts = 3700 - 1947.4 = 1752.4 USDT
+        //                            (12.6 of that is fee, 1739.8 is leftover from losers)
+        uint256 totalPayouts = 7 * expectedPayout;
+        uint256 totalFees    = 7 * expectedFeePerWinner;
+
+        assertEq(totalPayouts, 1947.4 ether, "sanity: total payouts");
+        assertEq(totalFees,    12.6 ether,   "sanity: total fees");
+
+        assertEq(betToken.balanceOf(address(eventManager)), poolUsdt - totalPayouts, "residual usdt in contract");
+        assertEq(yoloToken.balanceOf(address(eventManager)), 0, "all yolo returned");
+        assertEq(eventManager.feeBalances(), totalFees, "fee balances tracked");
+
+        // Event state
         (
-            ,
-            uint256 eventId,
-            address bettor,
-            IEventManager.EventResult selectedResult,
-            uint256 amount,
-            IEventManager.BetPaymentType paymentType,
-            uint256 stakingRound,
-
-        ) = eventManager.betRecords(1);
-        assertEq(eventId, 2);
-        assertEq(bettor, user);
-        assertEq(uint256(selectedResult), uint256(IEventManager.EventResult.NO));
-        assertEq(amount, 200 ether);
-        assertEq(uint256(paymentType), uint256(IEventManager.BetPaymentType.STAKING_CREDIT));
-        assertEq(stakingRound, 3);
-    }
-
-    function testFinishEventDistributesRewardsForTokenAndStakingWinners() public {
-        uint256 expectedStartTime = block.timestamp;
-        uint256 expectedEndTime = expectedStartTime + 1 days;
-        eventManager.createEvent(3, expectedStartTime, expectedEndTime, 1000, address(betToken));
-        betToken.mint(winner, 1_000 ether);
-        betToken.mint(loser, 1_000 ether);
-        stakingManager.setCredit(winner, 1, 500 ether);
-        stakingManager.setCredit(loser, 1, 500 ether);
-
-        vm.startPrank(winner);
-        betToken.approve(address(eventManager), 200 ether);
-        eventManager.betEvent(3, 200 ether, IEventManager.EventResult.YES);
-        eventManager.betEventWithStaking(3, 1, 100 ether, IEventManager.EventResult.YES);
-        vm.stopPrank();
-
-        vm.startPrank(loser);
-        betToken.approve(address(eventManager), 300 ether);
-        eventManager.betEvent(3, 300 ether, IEventManager.EventResult.NO);
-        eventManager.betEventWithStaking(3, 1, 200 ether, IEventManager.EventResult.NO);
-        vm.stopPrank();
-
-        (
-            uint256 eventIdBefore,
-            uint256 storedStartTimeBefore,
-            uint256 storedEndTimeBefore,
-            ,
-            ,
-            ,
-            ,
-            ,
-            ,
-            ,
-            uint256 createdAtBefore,
-            uint256 settledAtBefore
-        ) = eventManager.events(3);
-        assertEq(eventIdBefore, 3);
-        assertEq(storedStartTimeBefore, expectedStartTime, "stored start time");
-        assertEq(storedEndTimeBefore, expectedEndTime, "stored end time");
-        assertEq(createdAtBefore, expectedStartTime, "created at");
-        assertEq(settledAtBefore, 0);
-
-        uint256 settledAt = expectedStartTime + 2 days;
-        vm.warp(settledAt);
-        eventManager.setEventResult(3, IEventManager.EventResult.YES);
-        eventManager.finishEvent(3);
-
-        assertEq(betToken.balanceOf(winner), 1_270 ether);
-        assertEq(betToken.balanceOf(address(eventManager)), 30 ether);
-        assertEq(stakingManager.credits(winner, 1), 680 ether);
-        assertEq(stakingManager.credits(loser, 1), 300 ether);
-
-        (
-            uint256 eventId,
+            uint256 storedEventId,
             ,
             ,
             IEventManager.EventStatus status,
             IEventManager.EventResult result,
-            address betTokenAddress,
+            ,
             uint256 totalAmount,
+            ,
+            uint256 totalYesAmount,
+            uint256 totalNoAmount,
+            ,
+            ,
             uint256 winAmount,
             uint256 lossAmount,
-            uint256 settlementFeeRate,
             ,
-            uint256 storedSettledAt
-        ) = eventManager.events(3);
-        assertEq(eventId, 3);
+            ,
+
+        ) = eventManager.events(1);
+        assertEq(storedEventId, 1);
         assertEq(uint256(status), uint256(IEventManager.EventStatus.SETTLED));
         assertEq(uint256(result), uint256(IEventManager.EventResult.YES));
-        assertEq(betTokenAddress, address(betToken));
-        assertEq(totalAmount, 800 ether);
-        assertEq(winAmount, 300 ether);
-        assertEq(lossAmount, 500 ether);
-        assertEq(settlementFeeRate, 1000);
-        assertEq(storedSettledAt, settledAt, "settled at");
+        assertEq(totalAmount, poolUsdt);
+        assertEq(totalYesAmount, 7 * yesStake);
+        assertEq(totalNoAmount, 3 * noStake);
+        assertEq(winAmount, 7 * yesStake);
+        assertEq(lossAmount, 3 * noStake);
+    }
+
+    function _bet(address bettor, uint256 stake, uint256 collateral, IEventManager.EventResult side) internal {
+        betToken.mint(bettor, stake);
+        yoloToken.mint(bettor, collateral);
+
+        vm.startPrank(bettor);
+        betToken.approve(address(eventManager), stake);
+        yoloToken.approve(address(eventManager), collateral);
+        eventManager.betEvent(1, stake, side);
+        vm.stopPrank();
     }
 }

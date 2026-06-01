@@ -2,7 +2,6 @@
 pragma solidity ^0.8.20;
 
 import "../interfaces/IEventManager.sol";
-import "../interfaces/IStakingManager.sol";
 import "../interfaces/IYoloToken.sol";
 
 
@@ -11,10 +10,6 @@ abstract contract EventManagerStorage is IEventManager  {
 
     address public eventManager;
 
-    address public fundingPod;
-
-    address public feeVaultPod;
-
     address public oracle;
 
     address public USDT;
@@ -22,8 +17,6 @@ abstract contract EventManagerStorage is IEventManager  {
     address public underlyingToken;
 
     IYoloToken public yoloTokenAddress;
-
-    IStakingManager public stakingManager;
 
     uint256 public feeBalances;
 
@@ -48,11 +41,6 @@ abstract contract EventManagerStorage is IEventManager  {
     mapping(uint256 => uint256) public eventYesAmount;
 
     mapping(uint256 => uint256) public eventNoAmount;
-
-    mapping(uint256 => uint256) public tokenYesAmount;
-    mapping(uint256 => uint256) public tokenNoAmount;
-    mapping(uint256 => uint256) public stakingYesAmount;
-    mapping(uint256 => uint256) public stakingNoAmount;
 
     modifier onlyEventManager() {
         if (msg.sender != manager && msg.sender != eventManager) revert CallerIsNotEventManager();

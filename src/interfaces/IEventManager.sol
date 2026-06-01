@@ -18,11 +18,6 @@ interface IEventManager {
         INVALID        // 无效
     }
 
-    enum BetPaymentType {
-        TOKEN,
-        STAKING_CREDIT
-    }
-
     struct Event {
         uint256 eventId;             // 事件ID
         uint256 startTime;           // 开始时间
@@ -31,6 +26,11 @@ interface IEventManager {
         EventResult result;          // 事件结果
         address betTokenAddress;     // 投注的币种
         uint256 totalAmount;         // 总资金池
+        uint256 totalYoloAmount;     // 总Yolo资金
+        uint256 totalYesAmount;      // 总YES资金
+        uint256 totalNoAmount;       // 总NO资金
+        uint256 yesOdds;             // YES赔
+        uint256 noOdds;              // NO赔
         uint256 winAmount;           // 总盈利资金
         uint256 lossAmount;          // 总亏损资金
         uint256 settlementFeeRate;   // 结算费率 (basis points, 1/10000)
@@ -43,9 +43,9 @@ interface IEventManager {
         uint256 eventId;
         address bettor;
         EventResult selectedResult;
+        uint256 odds;
         uint256 amount;
-        BetPaymentType paymentType;
-        uint256 stakingRound;
+        uint256 yoloAmount;
         uint256 createdAt;
     }
 
@@ -60,16 +60,22 @@ interface IEventManager {
     error EventNotSettleable(uint256 eventId);
     error CallerIsNotEventManager();
     error ZeroAddress();
+    error InvalidYoloCollateral();
 
-    event EventCreated(uint256 indexed eventId, uint256 startTime, uint256 endTime, uint256 settlementFeeRate);
+    event EventCreated(
+        uint256 indexed eventId,
+        uint256 startTime,
+        uint256 endTime,
+        uint256 settlementFeeRate,
+        address betTokenAddress
+    );
     event EventBetPlaced(
         uint256 indexed betId,
         uint256 indexed eventId,
         address indexed bettor,
         EventResult selectedResult,
         uint256 amount,
-        BetPaymentType paymentType,
-        uint256 stakingRound,
+        uint256 yoloAmount,
         uint256 dayIndex
     );
     event EventResultSet(uint256 indexed eventId, EventResult result);
@@ -79,21 +85,26 @@ interface IEventManager {
         address indexed bettor,
         bool won,
         uint256 payoutAmount,
-        BetPaymentType paymentType,
-        uint256 stakingRound
+        uint256 feeAmount
     );
     event EventFinished(
         uint256 indexed eventId,
         EventResult result,
         uint256 winAmount,
         uint256 lossAmount,
-        uint256 tokenSettlementFee,
-        uint256 stakingCreditSettlementFee
+        uint256 tokenSettlementFee
     );
 
-    function createEvent(uint256 eventId, uint256 startTime, uint256 endTime, uint256 settlementFeeRate, address betTokenAddress) external;
+    function createEvent(
+        uint256 eventId,
+        uint256 startTime,
+        uint256 endTime,
+        uint256 settlementFeeRate,
+        address betTokenAddress,
+        uint256 yesOdds,
+        uint256 noOdds
+    ) external;
     function betEvent(uint256 eventId, uint256 amount, EventResult selectedResult) external;
-    function betEventWithStaking(uint256 eventId, uint256 stakingRound, uint256 amount, EventResult selectedResult) external;
     function setEventResult(uint256 eventId, EventResult result) external;
     function finishEvent(uint256 eventId) external;
     function getEventBetIds(uint256 eventId) external view returns (uint256[] memory);

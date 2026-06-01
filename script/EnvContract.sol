@@ -9,7 +9,6 @@ contract EnvContract is Script {
     struct CoreAddresses {
         address usdtTokenAddress;
         address proxyYoloToken;
-        address proxyStakingManager;
         address proxyEventManager;
         address proxyDaoRewardManager;
         address proxyFomoTreasureManager;
@@ -25,7 +24,6 @@ contract EnvContract is Script {
 
         addresses.usdtTokenAddress = _parseAddress(json, ".usdtTokenAddress");
         addresses.proxyYoloToken = _parseAddress(json, ".proxyYoloToken");
-        addresses.proxyStakingManager = _parseAddress(json, ".proxyStakingManager");
         addresses.proxyEventManager = _parseAddress(json, ".proxyEventManager");
         addresses.proxyDaoRewardManager = _parseAddress(json, ".proxyDaoRewardManager");
         addresses.proxyFomoTreasureManager = _parseAddress(json, ".proxyFomoTreasureManager");

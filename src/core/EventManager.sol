@@ -23,29 +23,20 @@ contract EventManager is Initializable, OwnableUpgradeable, PausableUpgradeable,
     function initialize(
         address initialOwner,
         address initialManager,
-        address _underlyingToken,
         address _usdt,
         IYoloToken _yoloTokenAddress
     ) public initializer {
         __Ownable_init(initialOwner);
         manager = initialManager;
-        underlyingToken = _underlyingToken;
         USDT = _usdt;
         yoloTokenAddress = _yoloTokenAddress;
         nextBetId = 1;
     }
 
-    function setStakingManager(address _stakingManager) external onlyOwner {
-        if (_stakingManager == address(0)) revert ZeroAddress();
-        stakingManager = IStakingManager(_stakingManager);
-    }
-
-
-    function createEvent(uint256 eventId, uint256 startTime, uint256 endTime, uint256 settlementFeeRate, address betTokenAddress) external onlyEventManager whenNotPaused {
+    function createEvent(uint256 eventId, uint256 startTime, uint256 endTime, uint256 settlementFeeRate, address betTokenAddress, uint256 yesOdds, uint256 noOdds) external onlyEventManager whenNotPaused {
         if (events[eventId].eventId != 0) revert EventAlreadyExists(eventId);
         if (startTime >= endTime) revert InvalidEventTime();
         if (settlementFeeRate > 10000) revert InvalidSettlementFeeRate();
-        if (betTokenAddress == address(0)) revert ZeroAddress();
 
         events[eventId] = Event({
             eventId: eventId,
@@ -55,6 +46,11 @@ contract EventManager is Initializable, OwnableUpgradeable, PausableUpgradeable,
             result: EventResult.PENDING,
             betTokenAddress: betTokenAddress,
             totalAmount: 0,
+            totalYesAmount: 0,
+            totalNoAmount: 0,
+            totalYoloAmount: 0,
+            yesOdds: yesOdds,
+            noOdds: noOdds,
             winAmount: 0,
             lossAmount: 0,
             settlementFeeRate: settlementFeeRate,
@@ -65,15 +61,11 @@ contract EventManager is Initializable, OwnableUpgradeable, PausableUpgradeable,
         eventIds.push(eventId);
         eventIdIndex[eventId] = eventIds.length - 1;
 
-        emit EventCreated(eventId, startTime, endTime, settlementFeeRate);
+        emit EventCreated(eventId, startTime, endTime, settlementFeeRate, betTokenAddress);
     }
 
     function betEvent(uint256 eventId, uint256 amount, EventResult selectedResult) external whenNotPaused nonReentrant {
         _betWithToken(eventId, amount, selectedResult, msg.sender);
-    }
-
-    function betEventWithStaking(uint256 eventId, uint256 stakingRound, uint256 amount, EventResult selectedResult) external whenNotPaused nonReentrant {
-        _betWithStaking(eventId, stakingRound, amount, selectedResult, msg.sender);
     }
 
     function setEventResult(uint256 eventId, EventResult result) external onlyEventManager whenNotPaused {
@@ -99,38 +91,28 @@ contract EventManager is Initializable, OwnableUpgradeable, PausableUpgradeable,
             return;
         }
 
-        uint256 tokenWinPool;
-        uint256 tokenLossPool;
-        uint256 stakingWinPool;
-        uint256 stakingLossPool;
-
         if (eventInfo.result == EventResult.YES) {
-            tokenWinPool = tokenYesAmount[eventId];
-            tokenLossPool = tokenNoAmount[eventId];
-            stakingWinPool = stakingYesAmount[eventId];
-            stakingLossPool = stakingNoAmount[eventId];
+            eventInfo.winAmount  = eventInfo.totalYesAmount;
+            eventInfo.lossAmount = eventInfo.totalNoAmount;
         } else {
-            tokenWinPool = tokenNoAmount[eventId];
-            tokenLossPool = tokenYesAmount[eventId];
-            stakingWinPool = stakingNoAmount[eventId];
-            stakingLossPool = stakingYesAmount[eventId];
+            eventInfo.winAmount  = eventInfo.totalNoAmount;
+            eventInfo.lossAmount = eventInfo.totalYesAmount;
         }
 
-        uint256 tokenSettlementFee = (tokenLossPool * eventInfo.settlementFeeRate) / 10000;
-        uint256 stakingCreditSettlementFee = (stakingLossPool * eventInfo.settlementFeeRate) / 10000;
+        uint256 totalFee = 0;
 
         for (uint256 i = 0; i < betCount; i++) {
             uint256 betId = eventBetIds[eventId][i];
             BetRecord storage betRecord = betRecords[betId];
             bool won = betRecord.selectedResult == eventInfo.result;
             uint256 payoutAmount = 0;
+            uint256 feeAmount = 0;
 
             if (won) {
-                if (betRecord.paymentType == BetPaymentType.TOKEN) {
-                    payoutAmount = _settleTokenWin(eventInfo, betRecord, tokenWinPool, tokenLossPool, tokenSettlementFee);
-                } else {
-                    payoutAmount = _settleStakingWin(betRecord, stakingWinPool, stakingLossPool, stakingCreditSettlementFee);
-                }
+                (payoutAmount, feeAmount) = _settleTokenWin(eventInfo, betRecord);
+                totalFee += feeAmount;
+            } else {
+                _settleTokenLose(betRecord);
             }
 
             emit BetSettled(
@@ -139,24 +121,20 @@ contract EventManager is Initializable, OwnableUpgradeable, PausableUpgradeable,
                 betRecord.bettor,
                 won,
                 payoutAmount,
-                betRecord.paymentType,
-                betRecord.stakingRound
+                feeAmount
             );
         }
 
-        eventInfo.winAmount = tokenWinPool + stakingWinPool;
-        eventInfo.lossAmount = tokenLossPool + stakingLossPool;
         eventInfo.status = EventStatus.SETTLED;
         eventInfo.settledAt = block.timestamp;
-        feeBalances += tokenSettlementFee;
+        feeBalances += totalFee;
 
         emit EventFinished(
             eventId,
             eventInfo.result,
             eventInfo.winAmount,
             eventInfo.lossAmount,
-            tokenSettlementFee,
-            stakingCreditSettlementFee
+            totalFee
         );
     }
 
@@ -171,17 +149,26 @@ contract EventManager is Initializable, OwnableUpgradeable, PausableUpgradeable,
     function _betWithToken(uint256 eventId, uint256 amount, EventResult selectedResult, address bettor) internal {
         Event storage eventInfo = _validateBet(eventId, amount, selectedResult);
         if (eventInfo.betTokenAddress == address(0)) revert InvalidBetToken();
-
         IERC20(eventInfo.betTokenAddress).safeTransferFrom(bettor, address(this), amount);
-        _recordBet(eventId, amount, selectedResult, bettor, BetPaymentType.TOKEN, 0);
-    }
 
-    function _betWithStaking(uint256 eventId, uint256 stakingRound, uint256 amount, EventResult selectedResult, address bettor) internal {
-        _validateBet(eventId, amount, selectedResult);
-        if (address(stakingManager) == address(0)) revert InvalidBetToken();
+        // YOLO collateral worth 20% of the bet amount.
+        // YOLO has 6 decimals; quote(1e6) returns how much paired token (USDT) 1 YOLO can swap for (raw units).
+        // required_YOLO_raw = (amount * 20 / 100) * 1e6 / quote(1e6)
+        uint256 price = yoloTokenAddress.quote(1e6);
+        uint256 yoloAmount = (amount * 20 * 1e6) / (100 * price);
+        if (yoloAmount == 0) revert InvalidYoloCollateral();
 
-        stakingManager.useStakingCredit(bettor, stakingRound, amount);
-        _recordBet(eventId, amount, selectedResult, bettor, BetPaymentType.STAKING_CREDIT, stakingRound);
+        IERC20(address(yoloTokenAddress)).safeTransferFrom(bettor, address(this), yoloAmount);
+
+        uint256 odds = eventInfo.yesOdds;
+        if (selectedResult == EventResult.YES) {
+            eventInfo.totalYesAmount += amount;
+        } else {
+            eventInfo.totalNoAmount += amount;
+            odds = eventInfo.noOdds;
+        }
+
+        _recordBet(eventId, amount, yoloAmount, selectedResult, odds, bettor);
     }
 
     function _validateBet(uint256 eventId, uint256 amount, EventResult selectedResult) internal view returns (Event storage eventInfo) {
@@ -193,7 +180,14 @@ contract EventManager is Initializable, OwnableUpgradeable, PausableUpgradeable,
         if (block.timestamp < eventInfo.startTime || block.timestamp >= eventInfo.endTime) revert EventNotBettable(eventId);
     }
 
-    function _recordBet(uint256 eventId, uint256 amount, EventResult selectedResult, address bettor, BetPaymentType paymentType, uint256 stakingRound) internal {
+    function _recordBet(
+        uint256 eventId,
+        uint256 amount,
+        uint256 yoloAmount,
+        EventResult selectedResult,
+        uint256 odds,
+        address bettor
+    ) internal {
         uint256 betId = nextBetId++;
 
         betRecords[betId] = BetRecord({
@@ -201,64 +195,43 @@ contract EventManager is Initializable, OwnableUpgradeable, PausableUpgradeable,
             eventId: eventId,
             bettor: bettor,
             selectedResult: selectedResult,
+            odds: odds,
             amount: amount,
-            paymentType: paymentType,
-            stakingRound: stakingRound,
+            yoloAmount: yoloAmount,
             createdAt: block.timestamp
         });
-
+ 
         eventBetIds[eventId].push(betId);
         userBetIds[bettor].push(betId);
 
         Event storage eventInfo = events[eventId];
         eventInfo.totalAmount += amount;
+        eventInfo.totalYoloAmount += yoloAmount;
+
         if (selectedResult == EventResult.YES) {
             eventYesAmount[eventId] += amount;
-            if (paymentType == BetPaymentType.TOKEN) {
-                tokenYesAmount[eventId] += amount;
-            } else {
-                stakingYesAmount[eventId] += amount;
-            }
         } else {
             eventNoAmount[eventId] += amount;
-            if (paymentType == BetPaymentType.TOKEN) {
-                tokenNoAmount[eventId] += amount;
-            } else {
-                stakingNoAmount[eventId] += amount;
-            }
         }
 
         uint256 dayIndex = block.timestamp / 1 days;
-        emit EventBetPlaced(betId, eventId, bettor, selectedResult, amount, paymentType, stakingRound, dayIndex);
+        emit EventBetPlaced(betId, eventId, bettor, selectedResult, amount, yoloAmount, dayIndex);
     }
 
     function _settleTokenWin(
         Event storage eventInfo,
-        BetRecord storage betRecord,
-        uint256 winPool,
-        uint256 lossPool,
-        uint256 settlementFee
-    ) internal returns (uint256 payoutAmount) {
-        uint256 rewardAmount = 0;
-        if (winPool > 0 && lossPool > settlementFee) {
-            rewardAmount = (betRecord.amount * (lossPool - settlementFee)) / winPool;
-        }
-        payoutAmount = betRecord.amount + rewardAmount;
+        BetRecord storage betRecord
+    ) internal returns (uint256 payoutAmount, uint256 feeAmount) {
+        uint256 rewardAmount = betRecord.amount * betRecord.odds / 10000;
+        feeAmount = (rewardAmount * eventInfo.settlementFeeRate) / 10000;
+        payoutAmount = betRecord.amount + rewardAmount - feeAmount;
+
         IERC20(eventInfo.betTokenAddress).safeTransfer(betRecord.bettor, payoutAmount);
+        IERC20(address(yoloTokenAddress)).safeTransfer(betRecord.bettor, betRecord.yoloAmount);
     }
 
-    function _settleStakingWin(
-        BetRecord storage betRecord,
-        uint256 winPool,
-        uint256 lossPool,
-        uint256 settlementFee
-    ) internal returns (uint256 payoutAmount) {
-        uint256 rewardAmount = 0;
-        if (winPool > 0 && lossPool > settlementFee) {
-            rewardAmount = (betRecord.amount * (lossPool - settlementFee)) / winPool;
-        }
-        payoutAmount = betRecord.amount + rewardAmount;
-        stakingManager.addStakingCredit(betRecord.bettor, betRecord.stakingRound, payoutAmount);
+    function _settleTokenLose(BetRecord storage betRecord) internal {
+        IERC20(address(yoloTokenAddress)).safeTransfer(betRecord.bettor, betRecord.yoloAmount);
     }
 
     function _refundInvalidEvent(Event storage eventInfo, uint256 eventId, uint256 betCount) internal {
@@ -266,11 +239,8 @@ contract EventManager is Initializable, OwnableUpgradeable, PausableUpgradeable,
             uint256 betId = eventBetIds[eventId][i];
             BetRecord storage betRecord = betRecords[betId];
 
-            if (betRecord.paymentType == BetPaymentType.TOKEN) {
-                IERC20(eventInfo.betTokenAddress).safeTransfer(betRecord.bettor, betRecord.amount);
-            } else {
-                stakingManager.addStakingCredit(betRecord.bettor, betRecord.stakingRound, betRecord.amount);
-            }
+            IERC20(eventInfo.betTokenAddress).safeTransfer(betRecord.bettor, betRecord.amount);
+            IERC20(address(yoloTokenAddress)).safeTransfer(betRecord.bettor, betRecord.yoloAmount);
 
             emit BetSettled(
                 betId,
@@ -278,8 +248,7 @@ contract EventManager is Initializable, OwnableUpgradeable, PausableUpgradeable,
                 betRecord.bettor,
                 false,
                 betRecord.amount,
-                betRecord.paymentType,
-                betRecord.stakingRound
+                0
             );
         }
 
@@ -288,7 +257,6 @@ contract EventManager is Initializable, OwnableUpgradeable, PausableUpgradeable,
         eventInfo.status = EventStatus.SETTLED;
         eventInfo.settledAt = block.timestamp;
 
-        emit EventFinished(eventId, eventInfo.result, 0, 0, 0, 0);
+        emit EventFinished(eventId, eventInfo.result, 0, 0, 0);
     }
-
 }
