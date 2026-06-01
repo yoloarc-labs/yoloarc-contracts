@@ -24,4 +24,6 @@ abstract contract StakingManagerStorage is IStakingManager {
     mapping(address => uint256) public withdrawRequestCount;
     mapping(address => mapping(uint256 => WithdrawRequest)) public withdrawRequests;
 
+    uint256 public totalSlippageAmount;
+
 }

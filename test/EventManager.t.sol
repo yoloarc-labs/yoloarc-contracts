@@ -53,7 +53,10 @@ contract MockStakingManager is IStakingManager {
     function freezeStaking(uint256) external {}
     function unfreezeStaking(uint256) external {}
     function getPendingWithdrawRequests(address) external pure returns (WithdrawRequestView[] memory pendingRequests) { return pendingRequests; }
-    function getRedeemableAmount(address, uint256) external pure returns (uint256) { return 0; }
+    function getUnstakeableAmount(address, uint256) external pure returns (uint256) { return 0; }
+    function topup(address user, uint256 stakingRound, uint256 amount) external {
+        credits[user][stakingRound] += amount;
+    }
     function createReward(address, uint256, uint256, uint256, uint8) external {}
     function claimReward() external {}
 }

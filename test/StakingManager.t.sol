@@ -75,7 +75,9 @@ contract StakingManagerTest is Test {
             uint256 firstStakingAmount,
             uint256 firstStakingTime,
             uint256 firstStakingPrice,
+            ,
             uint256 firstCreditLimit,
+            ,
             uint256 firstFrozenCreditLimit,
             uint8 firstFreezeLevel,
             bool firstPlatformTakenOver
@@ -92,7 +94,9 @@ contract StakingManagerTest is Test {
             uint256 secondStakingAmount,
             uint256 secondStakingTime,
             uint256 secondStakingPrice,
+            ,
             uint256 secondCreditLimit,
+            ,
             uint256 secondFrozenCreditLimit,
             uint8 secondFreezeLevel,
             bool secondPlatformTakenOver
@@ -203,7 +207,7 @@ contract StakingManagerTest is Test {
         assertEq(availableAt, 1_000 + 3 hours);
         assertFalse(claimed);
 
-        (, , , uint256 creditLimit, , , ) = stakingManager.userStakingInfo(user, 1);
+        (, , , , uint256 creditLimit, , , , ) = stakingManager.userStakingInfo(user, 1);
         assertEq(creditLimit, (200 ether * 900) / 1000);
     }
 
@@ -260,8 +264,8 @@ contract StakingManagerTest is Test {
         stakingManager.stakingWithdraw(firstWithdrawRequestId);
         vm.stopPrank();
 
-        assertEq(stakingManager.getRedeemableAmount(user, 1), 150 ether);
-        assertEq(stakingManager.getRedeemableAmount(user, 99), 0);
+        assertEq(stakingManager.getUnstakeableAmount(user, 1), 150 ether);
+        assertEq(stakingManager.getUnstakeableAmount(user, 99), 0);
 
         IStakingManager.WithdrawRequestView[] memory pendingRequests = stakingManager.getPendingWithdrawRequests(user);
         assertEq(pendingRequests.length, 1);
@@ -278,7 +282,7 @@ contract StakingManagerTest is Test {
         internal
         view
     {
-        (, , , uint256 creditLimit, uint256 frozenCreditLimit, uint8 actualFreezeLevel, bool actualPlatformTakenOver) =
+        (, , , , uint256 creditLimit, , uint256 frozenCreditLimit, uint8 actualFreezeLevel, bool actualPlatformTakenOver) =
             stakingManager.userStakingInfo(user, stakingRound_);
         assertEq(frozenCreditLimit, (creditLimit * frozenPercent) / 100);
         assertEq(actualFreezeLevel, freezeLevel);

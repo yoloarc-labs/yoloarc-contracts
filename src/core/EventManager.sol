@@ -252,14 +252,43 @@ contract EventManager is Initializable, OwnableUpgradeable, PausableUpgradeable,
         uint256 winPool,
         uint256 lossPool,
         uint256 settlementFee
+        bool autoTopup
     ) internal returns (uint256 payoutAmount) {
         uint256 rewardAmount = 0;
         if (winPool > 0 && lossPool > settlementFee) {
             rewardAmount = (betRecord.amount * (lossPool - settlementFee)) / winPool;
         }
-        payoutAmount = betRecord.amount + rewardAmount;
-        stakingManager.addStakingCredit(betRecord.bettor, betRecord.stakingRound, payoutAmount);
+        payoutAmount = rewardAmount;
+        stakingManager.releaseStakingCredit(betRecord.bettor, betRecord.stakingRound, betRecord.amount);
+        
+        if (autoTopup) {
+            //自动添加的下注的池子
+            stakingManager.topup(betRecord.bettor, betRecord.stakingRound, rewardAmount);
+        }else{
+            //转回到用户钱包
+            IERC20(eventInfo.betTokenAddress).safeTransfer(betRecord.bettor, rewardAmount);
+        }
     }
+
+    function _settleStakingLose(
+        BetRecord storage betRecord,
+        uint256 winPool,
+        uint256 lossPool,
+        uint256 settlementFee
+    ) internal returns (uint256 payoutAmount) {
+        
+        stakingManager.releaseStakingCredit(betRecord.bettor, betRecord.stakingRound, betRecord.amount);
+
+        uint256 rewardAmount = 0;
+        if (winPool > 0 && lossPool > settlementFee) {
+            rewardAmount = (betRecord.amount * (lossPool - settlementFee)) / winPool;
+        }
+        payoutAmount = betRecord.amount + rewardAmount;
+        // Release the locked bet credit. TODO: pay out rewardAmount through a
+        // bonus credit / USDT mechanism once the product flow is finalized.
+        stakingManager.releaseStakingCredit(betRecord.bettor, betRecord.stakingRound, betRecord.amount);
+    }
+
 
     function _refundInvalidEvent(Event storage eventInfo, uint256 eventId, uint256 betCount) internal {
         for (uint256 i = 0; i < betCount; i++) {
@@ -269,7 +298,7 @@ contract EventManager is Initializable, OwnableUpgradeable, PausableUpgradeable,
             if (betRecord.paymentType == BetPaymentType.TOKEN) {
                 IERC20(eventInfo.betTokenAddress).safeTransfer(betRecord.bettor, betRecord.amount);
             } else {
-                stakingManager.addStakingCredit(betRecord.bettor, betRecord.stakingRound, betRecord.amount);
+                stakingManager.releaseStakingCredit(betRecord.bettor, betRecord.stakingRound, betRecord.amount);
             }
 
             emit BetSettled(
