@@ -49,6 +49,17 @@ interface IEventManager {
         uint256 createdAt;
     }
 
+    /// @notice Tracks a YOLO collateral release schedule for one settled bet.
+    /// `totalAmount` 是开始释放时的原始数量；
+    /// `withdrawn` 累计被 user 提取 OR 被新下注消费 的数量；
+    /// `startDay = block.timestamp / 1 days` (UTC 自然日)。
+    /// Cliff 释放：currentDay < startDay + YOLO_VESTING_DAYS 时已释放=0；到达 cliff 后全部解锁。
+    struct YoloVesting {
+        uint256 totalAmount;
+        uint256 withdrawn;
+        uint256 startDay;
+    }
+
     error EventAlreadyExists(uint256 eventId);
     error EventNotFound(uint256 eventId);
     error InvalidEventTime();
@@ -79,6 +90,7 @@ interface IEventManager {
         uint256 dayIndex
     );
     event EventResultSet(uint256 indexed eventId, EventResult result);
+    event EventOddsUpdated(uint256 indexed eventId, uint256 yesOdds, uint256 noOdds);
     event BetSettled(
         uint256 indexed betId,
         uint256 indexed eventId,
@@ -94,6 +106,15 @@ interface IEventManager {
         uint256 lossAmount,
         uint256 tokenSettlementFee
     );
+    event YoloVestingStarted(
+        address indexed user,
+        uint256 indexed eventId,
+        uint256 indexed vestingId,
+        uint256 amount,
+        uint256 startDay
+    );
+    event YoloClaimed(address indexed user, uint256 amount);
+    event YoloReused(address indexed user, uint256 indexed eventId, uint256 amount);
 
     function createEvent(
         uint256 eventId,
@@ -105,8 +126,15 @@ interface IEventManager {
         uint256 noOdds
     ) external;
     function betEvent(uint256 eventId, uint256 amount, EventResult selectedResult) external;
+    function setEventOdds(uint256 eventId, uint256 yesOdds, uint256 noOdds) external;
     function setEventResult(uint256 eventId, EventResult result) external;
     function finishEvent(uint256 eventId) external;
     function getEventBetIds(uint256 eventId) external view returns (uint256[] memory);
     function getUserBetIds(address user) external view returns (uint256[] memory);
+
+    function claimYolo() external;
+    function getClaimableYolo(address user) external view returns (uint256);
+    function getActiveYoloVesting(address user) external view returns (uint256);
+    function getUserVestings(address user) external view returns (YoloVesting[] memory);
+    function getYoloVesting(address user, uint256 vestingId) external view returns (YoloVesting memory);
 }

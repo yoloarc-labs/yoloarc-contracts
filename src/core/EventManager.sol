@@ -68,6 +68,17 @@ contract EventManager is Initializable, OwnableUpgradeable, PausableUpgradeable,
         _betWithToken(eventId, amount, selectedResult, msg.sender);
     }
 
+    function setEventOdds(uint256 eventId, uint256 yesOdds, uint256 noOdds) external onlyOwner whenNotPaused {
+        Event storage eventInfo = events[eventId];
+        if (eventInfo.eventId == 0) revert EventNotFound(eventId);
+        if (eventInfo.status == EventStatus.SETTLED || eventInfo.status == EventStatus.CANCELLED) revert EventNotSettleable(eventId);
+        if (eventInfo.result != EventResult.PENDING) revert EventNotSettleable(eventId);
+
+        eventInfo.yesOdds = yesOdds;
+        eventInfo.noOdds = noOdds;
+        emit EventOddsUpdated(eventId, yesOdds, noOdds);
+    }
+
     function setEventResult(uint256 eventId, EventResult result) external onlyEventManager whenNotPaused {
         Event storage eventInfo = events[eventId];
         if (eventInfo.eventId == 0) revert EventNotFound(eventId);
@@ -158,7 +169,14 @@ contract EventManager is Initializable, OwnableUpgradeable, PausableUpgradeable,
         uint256 yoloAmount = (amount * 20 * 1e6) / (100 * price);
         if (yoloAmount == 0) revert InvalidYoloCollateral();
 
-        IERC20(address(yoloTokenAddress)).safeTransferFrom(bettor, address(this), yoloAmount);
+        // Prefer the user's still-locked vesting (un-claimed YOLO from past settled bets),
+        // then top up the shortfall from wallet.
+        uint256 reused = _consumeVesting(bettor, yoloAmount);
+        uint256 fromWallet = yoloAmount - reused;
+        if (fromWallet > 0) {
+            IERC20(address(yoloTokenAddress)).safeTransferFrom(bettor, address(this), fromWallet);
+        }
+        if (reused > 0) emit YoloReused(bettor, eventId, reused);
 
         uint256 odds = eventInfo.yesOdds;
         if (selectedResult == EventResult.YES) {
@@ -227,13 +245,14 @@ contract EventManager is Initializable, OwnableUpgradeable, PausableUpgradeable,
         payoutAmount = betRecord.amount + rewardAmount - feeAmount;
 
         IERC20(eventInfo.betTokenAddress).safeTransfer(betRecord.bettor, payoutAmount);
-        IERC20(address(yoloTokenAddress)).safeTransfer(betRecord.bettor, betRecord.yoloAmount);
+        _addYoloVesting(betRecord.bettor, betRecord.eventId, betRecord.yoloAmount);
     }
 
     function _settleTokenLose(BetRecord storage betRecord) internal {
-        IERC20(address(yoloTokenAddress)).safeTransfer(betRecord.bettor, betRecord.yoloAmount);
+        _addYoloVesting(betRecord.bettor, betRecord.eventId, betRecord.yoloAmount);
     }
 
+    // Invalid event: 平台原因导致，直接原路退还 USDT + YOLO，不走 vesting。
     function _refundInvalidEvent(Event storage eventInfo, uint256 eventId, uint256 betCount) internal {
         for (uint256 i = 0; i < betCount; i++) {
             uint256 betId = eventBetIds[eventId][i];
@@ -258,5 +277,129 @@ contract EventManager is Initializable, OwnableUpgradeable, PausableUpgradeable,
         eventInfo.settledAt = block.timestamp;
 
         emit EventFinished(eventId, eventInfo.result, 0, 0, 0);
+    }
+
+    // ============== YOLO vesting ==============
+
+    function claimYolo() external nonReentrant whenNotPaused {
+        uint256 today = block.timestamp / 1 days;
+        uint256 head = userVestingHead[msg.sender];
+        uint256 tail = userVestingTail[msg.sender];
+
+        uint256 total;
+        for (uint256 i = head; i < tail; i++) {
+            YoloVesting storage v = _userVestings[msg.sender][i];
+            if (v.totalAmount == 0) continue;
+            uint256 vested = _vestedAmount(v.totalAmount, v.startDay, today);
+            if (vested > v.withdrawn) {
+                uint256 claimable = vested - v.withdrawn;
+                v.withdrawn += claimable;
+                total += claimable;
+            }
+        }
+
+        _compactHead(msg.sender);
+
+        if (total > 0) {
+            IERC20(address(yoloTokenAddress)).safeTransfer(msg.sender, total);
+            emit YoloClaimed(msg.sender, total);
+        }
+        // 0 可领时静默返回，不 revert
+    }
+
+    function getClaimableYolo(address user) external view returns (uint256 total) {
+        uint256 today = block.timestamp / 1 days;
+        uint256 head = userVestingHead[user];
+        uint256 tail = userVestingTail[user];
+        for (uint256 i = head; i < tail; i++) {
+            YoloVesting storage v = _userVestings[user][i];
+            if (v.totalAmount == 0) continue;
+            uint256 vested = _vestedAmount(v.totalAmount, v.startDay, today);
+            if (vested > v.withdrawn) total += vested - v.withdrawn;
+        }
+    }
+
+    function getActiveYoloVesting(address user) external view returns (uint256 total) {
+        uint256 head = userVestingHead[user];
+        uint256 tail = userVestingTail[user];
+        for (uint256 i = head; i < tail; i++) {
+            YoloVesting storage v = _userVestings[user][i];
+            if (v.totalAmount == 0) continue;
+            total += v.totalAmount - v.withdrawn;
+        }
+    }
+
+    function getUserVestings(address user) external view returns (YoloVesting[] memory result) {
+        uint256 head = userVestingHead[user];
+        uint256 tail = userVestingTail[user];
+        uint256 count;
+        //防御性写法
+        for (uint256 i = head; i < tail; i++) {
+            YoloVesting storage v = _userVestings[user][i];
+            if (v.totalAmount > 0 && v.withdrawn < v.totalAmount) count++;
+        }
+        result = new YoloVesting[](count);
+        uint256 j;
+        for (uint256 i = head; i < tail; i++) {
+            YoloVesting storage v = _userVestings[user][i];
+            if (v.totalAmount > 0 && v.withdrawn < v.totalAmount) {
+                result[j++] = v;
+            }
+        }
+    }
+
+    function getYoloVesting(address user, uint256 vestingId) external view returns (YoloVesting memory) {
+        require(vestingId < userVestingTail[user], "Invalid vesting id");
+        require(vestingId >= userVestingHead[user], "Invalid vesting id");
+        return _userVestings[user][vestingId];
+    }
+
+    function _addYoloVesting(address user, uint256 eventId, uint256 amount) internal {
+        if (amount == 0) return;
+        uint256 id = userVestingTail[user];
+        uint256 startDay = block.timestamp / 1 days;
+        _userVestings[user][id] = YoloVesting({
+            totalAmount: amount,
+            withdrawn: 0,
+            startDay: startDay
+        });
+        userVestingTail[user] = id + 1;
+        emit YoloVestingStarted(user, eventId, id, amount, startDay);
+    }
+
+    /// 从用户已结算但未取走的 YOLO 中扣除 `needed`，FIFO 消费；返回实际消费量。
+    /// 同时把 withdrawn 累加（既包含 claim 也包含 reuse），剩余部分还能继续释放。
+    function _consumeVesting(address user, uint256 needed) internal returns (uint256 consumed) {
+        uint256 head = userVestingHead[user];
+        uint256 tail = userVestingTail[user];
+        for (uint256 i = head; i < tail && consumed < needed; i++) {
+            YoloVesting storage v = _userVestings[user][i];
+            uint256 left = v.totalAmount - v.withdrawn;
+            if (left == 0) continue;
+            uint256 take = needed - consumed;
+            if (take > left) take = left;
+            v.withdrawn += take;
+            consumed += take;
+        }
+        _compactHead(user);
+    }
+
+    /// 把队首已完全消耗的 tranche 跳过，释放存储 gas。
+    function _compactHead(address user) internal {
+        uint256 head = userVestingHead[user];
+        uint256 tail = userVestingTail[user];
+        while (head < tail) {
+            YoloVesting storage v = _userVestings[user][head];
+            if (v.totalAmount != 0 && v.withdrawn < v.totalAmount) break;
+            delete _userVestings[user][head];
+            head++;
+        }
+        userVestingHead[user] = head;
+    }
+
+    // 10 天 cliff 释放：在 startDay + YOLO_VESTING_DAYS 之前为 0，到达后全部解锁。
+    function _vestedAmount(uint256 totalAmount, uint256 startDay, uint256 currentDay) internal pure returns (uint256) {
+        if (currentDay < startDay + YOLO_VESTING_DAYS) return 0;
+        return totalAmount;
     }
 }

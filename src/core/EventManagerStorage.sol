@@ -42,6 +42,14 @@ abstract contract EventManagerStorage is IEventManager  {
 
     mapping(uint256 => uint256) public eventNoAmount;
 
+    // ---- YOLO 抵押释放 (vesting) ----
+    uint256 public constant YOLO_VESTING_DAYS = 10;
+
+    /// 每个用户的 vesting 队列，按 vestingId 索引；id 在 [head, tail) 范围内有效。
+    mapping(address => mapping(uint256 => YoloVesting)) internal _userVestings;
+    mapping(address => uint256) public userVestingHead;
+    mapping(address => uint256) public userVestingTail;
+
     modifier onlyEventManager() {
         if (msg.sender != manager && msg.sender != eventManager) revert CallerIsNotEventManager();
         _;
