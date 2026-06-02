@@ -1,0 +1,217 @@
+// SPDX-License-Identifier: UNLICENSED
+pragma solidity ^0.8.20;
+
+import "@openzeppelin-upgrades/contracts/proxy/utils/Initializable.sol";
+import "@openzeppelin-upgrades/contracts/access/OwnableUpgradeable.sol";
+import "@openzeppelin-upgrades/contracts/utils/PausableUpgradeable.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin-upgrades/contracts/token/ERC721/ERC721Upgradeable.sol";
+import "@openzeppelin-upgrades/contracts/token/ERC721/extensions/ERC721BurnableUpgradeable.sol";
+import "@openzeppelin-upgrades/contracts/token/ERC721/extensions/ERC721URIStorageUpgradeable.sol";
+
+import {CardManagerStorage} from "./CardManagerStorage.sol";
+
+contract CardManager is
+    Initializable,
+    OwnableUpgradeable,
+    PausableUpgradeable,
+    ReentrancyGuard,
+    ERC721Upgradeable,
+    ERC721BurnableUpgradeable,
+    ERC721URIStorageUpgradeable,
+    CardManagerStorage
+{
+    using SafeERC20 for IERC20;
+
+    string private constant CARD_NAME = "YoloArc Card";
+    string private constant CARD_SYMBOL = "YAC";
+
+    constructor() {
+        _disableInitializers();
+    }
+
+    modifier onlyManager() {
+        require(msg.sender == manager, "onlyManager");
+        _;
+    }
+
+    modifier onlyFundManager() {
+        require(msg.sender == fundManager, "onlyFundManager");
+        _;
+    }
+
+    modifier onlyContractCaller() {
+        require(msg.sender == contractCaller, "onlyContractCaller");
+        _;
+    }
+
+    receive() external payable {
+        require(!paused(), "Pausable: paused");
+        fundingBalance[NativeTokenAddress] += msg.value;
+        emit Deposit(NativeTokenAddress, msg.sender, msg.value);
+    }
+
+    function initialize(address initialOwner, address _manager, address _underlyingToken, address _adminFeeVault, address _contractCaller, string memory _nftJson) public initializer {
+        __Ownable_init(initialOwner);
+        __ERC721_init(CARD_NAME, CARD_SYMBOL);
+        __ERC721Burnable_init();
+        __ERC721URIStorage_init();
+        manager = _manager;
+        underlyingToken = _underlyingToken;
+        adminFeeVault = _adminFeeVault;
+        contractCaller = _contractCaller;
+        nftJson = _nftJson;
+    }
+
+    function setManager(address _manager) external onlyOwner {
+        require(_manager != address(0), "CardManager: manager cannot be zero address");
+        manager = _manager;
+    }
+
+    function setContractCaller(address _contractCaller) external onlyOwner {
+        require(_contractCaller != address(0), "CardManager: manager cannot be zero address");
+        contractCaller = _contractCaller;
+    }
+
+    function setFundManager(address _fundManager) external onlyOwner {
+        require(_fundManager != address(0), "CardManager: fund manager cannot be zero address");
+        fundManager = _fundManager;
+    }
+
+    function updateFundingBalance(address tokenAddress, uint256 amount) external onlyOwner {
+        require(tokenAddress != address(0), "CardManager: token address cannot be zero address");
+        fundingBalance[tokenAddress] += amount;
+    }
+
+    function deposit() external payable whenNotPaused returns (bool) {
+        fundingBalance[NativeTokenAddress] += msg.value;
+        emit Deposit(NativeTokenAddress, msg.sender, msg.value);
+        return true;
+    }
+
+    function depositRewardErc20(address tokenAddress, address feePayer, uint256 amount) external whenNotPaused returns (bool) {
+        require(amount > 0, "CardManager: depositRewardErc20 invalid amount");
+        require(tokenAddress != address(0), "CardManager: depositRewardErc20 token address is zero address");
+
+        IERC20 token = IERC20(tokenAddress);
+
+        token.safeTransferFrom(feePayer, address(this), amount);
+
+        fundingBalance[tokenAddress] += amount;
+
+        emit Deposit(tokenAddress, feePayer, amount);
+
+        return true;
+    }
+
+    function withdraw(address payable withdrawAddress, uint256 amount)
+        external
+        payable
+        whenNotPaused
+        onlyFundManager
+        returns (bool)
+    {
+        require(
+            address(this).balance >= amount,
+            "CardManager withdraw: insufficient native token balance in contract"
+        );
+        fundingBalance[NativeTokenAddress] -= amount;
+        (bool success,) = withdrawAddress.call{value: amount}("");
+        if (!success) {
+            return false;
+        }
+        emit Withdraw(NativeTokenAddress, msg.sender, withdrawAddress, amount);
+        return true;
+    }
+
+    function withdrawErc20(address recipient, uint256 amount) external whenNotPaused onlyFundManager returns (bool) {
+        require(
+            amount <= _tokenBalance(), "CardManager: withdraw erc20 amount more token balance in this contracts"
+        );
+        fundingBalance[underlyingToken] -= amount;
+
+        IERC20(underlyingToken).safeTransfer(recipient, amount);
+
+        emit Withdraw(underlyingToken, msg.sender, recipient, amount);
+        return true;
+    }
+
+    function validatorMine(address tokenAddress, address[] calldata miner, uint256[] calldata amount) external onlyContractCaller {
+        uint256 length = miner.length;
+        require(length == amount.length, "CardManager: miner and amount length mismatch");
+
+        for (uint256 i = 0; i < length;) {
+            validatorBalance[tokenAddress][miner[i]] += amount[i];
+            emit ValidatorMine(tokenAddress, miner[i], amount[i]);
+            unchecked {
+                ++i;
+            }
+        }
+    }
+
+    function validatorMineClaim(address tokenAddress, uint256 amount) external {
+        require(validatorBalance[tokenAddress][msg.sender] >= amount, "CardManager: validator balance is not enough");
+
+        validatorBalance[tokenAddress][msg.sender] -= amount;
+
+        IERC20(tokenAddress).safeTransfer(msg.sender, amount);
+
+        emit ValidatorMineClaim(tokenAddress, msg.sender, amount);
+    }
+
+    function buyCard(uint256 amount) external nonReentrant returns (bool, uint256) {
+        uint256 currentPrice = cardPrice();
+
+        require(IERC20(underlyingToken).allowance(msg.sender, address(this)) >= currentPrice, "CardManager buyCard: User allowance must more than price");
+
+        require(amount >= currentPrice, "CardManager buyCard: amount must be more than price");
+
+        IERC20(underlyingToken).safeTransferFrom(msg.sender, address(this), currentPrice);
+
+        uint256 tokenId = _nextTokenId++;
+
+        _safeMint(msg.sender, tokenId);
+
+        emit CreateNFT(msg.sender, tokenId, nftJson);
+
+        return (true, tokenId);
+    }
+
+    function tokenURI(uint256 tokenId) public view override(ERC721Upgradeable, ERC721URIStorageUpgradeable) returns (string memory) {
+        require(_ownerOf(tokenId) != address(0), "ERC721Metadata: URI query for nonexistent token");
+        return nftJson;
+    }
+
+    function uri(uint256 inputTokenId) public view virtual returns (string memory) {
+        return tokenURI(inputTokenId);
+    }
+
+    function supportsInterface(bytes4 interfaceId)
+        public
+        view
+        override(ERC721Upgradeable, ERC721URIStorageUpgradeable)
+        returns (bool)
+    {
+        return super.supportsInterface(interfaceId);
+    }
+
+    function cardPrice() public view returns (uint256) {
+        uint256 tier = _nextTokenId / 10000;
+        return minAmount * (100 + (tier * 20)) / 100;
+    }
+
+    function pause() external onlyManager {
+        _pause();
+    }
+
+    function unpause() external onlyManager {
+        _unpause();
+    }
+
+    // ========= internal =========
+    function _tokenBalance() internal view virtual returns (uint256) {
+        return IERC20(underlyingToken).balanceOf(address(this));
+    }
+}

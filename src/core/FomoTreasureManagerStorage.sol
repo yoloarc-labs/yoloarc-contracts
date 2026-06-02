@@ -2,10 +2,10 @@
 pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
-import "../../interfaces/IDaoRewardManager.sol";
+import "../interfaces/IFomoTreasureManage.sol";
 
 
-abstract contract DaoRewardManagerStorage is IDaoRewardManager {
+abstract contract FomoTreasureManagerStorage is IFomoTreasureManage {
     address public rewardTokenAddress;
     address public manager;
 

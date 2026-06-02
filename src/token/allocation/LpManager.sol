@@ -7,10 +7,11 @@ import "@openzeppelin-upgrades/contracts/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
+import "@pancake-v2-periphery/interfaces/IPancakeRouter02.sol";
 
-import {CapitalManagerStorage} from "./CapitalManagerStorage.sol";
+import { LpManagerStorage } from "./LpManagerStorage.sol";
 
-contract CapitalManager is Initializable, OwnableUpgradeable, PausableUpgradeable, CapitalManagerStorage {
+contract LpManager is Initializable, OwnableUpgradeable, PausableUpgradeable, LpManagerStorage {
     using SafeERC20 for IERC20;
     using EnumerableSet for EnumerableSet.AddressSet;
 
@@ -28,29 +29,17 @@ contract CapitalManager is Initializable, OwnableUpgradeable, PausableUpgradeabl
         _;
     }
 
-    /**
-     * @dev Initialize the DAO Reward Manager contract
-     * @param initialOwner Initial owner address
-     * @param _token Reward token address (CMT)
-     */
-    function initialize(address initialOwner, address initialManager, address _token) public initializer {
+    function initialize(address initialOwner, address initialManager, address _underlyingToken, address _usdt) public initializer {
         __Ownable_init(initialOwner);
         manager = initialManager;
-        token = _token;
+        underlyingToken = _underlyingToken;
+        USDT = _usdt;
     }
 
-    /**
-     * @dev Add an authorized caller
-     * @param caller Address to be authorized
-     */
     function addAuthorizedCaller(address caller) external onlyManager {
         authorizedCallers.add(caller);
     }
 
-    /**
-     * @dev Remove an authorized caller
-     * @param caller Address to be removed from authorization
-     */
     function removeAuthorizedCaller(address caller) external onlyManager {
         authorizedCallers.remove(caller);
     }
@@ -59,34 +48,34 @@ contract CapitalManager is Initializable, OwnableUpgradeable, PausableUpgradeabl
         return EnumerableSet.values(authorizedCallers);
     }
 
-    /**
-     * @dev Set the manager address (only owner can call)
-     * @param _manager New manager address
-     */
     function setManager(address _manager) external onlyOwner {
         require(_manager != address(0), "manager cannot be zero address");
         manager = _manager;
     }
 
-    /**
-     * @dev Withdraw tokens from the reward pool
-     * @param recipient Recipient address
-     * @param amount Withdrawal amount
-     */
     function withdraw(address recipient, uint256 amount) external onAuthorizedCaller {
         require(amount <= _tokenBalance(), "withdraw amount more token balance in this contracts");
 
-        IERC20(token).safeTransfer(recipient, amount);
+        IERC20(underlyingToken).safeTransfer(recipient, amount);
 
-        emit Withdraw(token, recipient, amount);
+        emit Withdraw(underlyingToken, recipient, amount);
+    }
+
+    function addLiquidity(uint256 tokenAmount, uint256 usdtAmount, address to) external onlyManager {
+        require(tokenAmount > 0 && usdtAmount > 0, "Amounts must be greater than 0");
+
+        IERC20(underlyingToken).approve(V2_ROUTER, tokenAmount);
+
+        IERC20(USDT).approve(V2_ROUTER, usdtAmount);
+
+        (uint256 amount0Used, uint256 amount1Used, uint256 liquidityAdded) = IPancakeRouter02(V2_ROUTER)
+            .addLiquidity(USDT, underlyingToken, usdtAmount, tokenAmount, 0, 0, to, block.timestamp);
+
+        emit LiquidityAdded(liquidityAdded, amount0Used, amount1Used);
     }
 
     // ========= internal =========
-    /**
-     * @dev Get the token balance in the contract
-     * @return Token balance in the contract
-     */
     function _tokenBalance() internal view virtual returns (uint256) {
-        return IERC20(token).balanceOf(address(this));
+        return IERC20(underlyingToken).balanceOf(address(this));
     }
 }

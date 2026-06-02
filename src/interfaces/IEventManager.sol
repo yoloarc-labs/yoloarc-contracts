@@ -61,7 +61,13 @@ interface IEventManager {
     error CallerIsNotEventManager();
     error ZeroAddress();
 
-    event EventCreated(uint256 indexed eventId, uint256 startTime, uint256 endTime, uint256 settlementFeeRate);
+    event EventCreated(
+        uint256 indexed eventId,
+        uint256 startTime,
+        uint256 endTime,
+        uint256 settlementFeeRate
+    );
+
     event EventBetPlaced(
         uint256 indexed betId,
         uint256 indexed eventId,
@@ -69,9 +75,15 @@ interface IEventManager {
         EventResult selectedResult,
         uint256 amount,
         BetPaymentType paymentType,
-        uint256 stakingRound
+        uint256 stakingRound,
+        uint256 dayIndex
     );
-    event EventResultSet(uint256 indexed eventId, EventResult result);
+
+    event EventResultSet(
+        uint256 indexed eventId,
+        EventResult result
+    );
+
     event BetSettled(
         uint256 indexed betId,
         uint256 indexed eventId,
@@ -81,6 +93,7 @@ interface IEventManager {
         BetPaymentType paymentType,
         uint256 stakingRound
     );
+
     event EventFinished(
         uint256 indexed eventId,
         EventResult result,
@@ -92,7 +105,6 @@ interface IEventManager {
 
     function createEvent(uint256 eventId, uint256 startTime, uint256 endTime, uint256 settlementFeeRate, address betTokenAddress) external;
     function betEvent(uint256 eventId, uint256 amount, EventResult selectedResult) external;
-    function betEventWithStaking(uint256 eventId, uint256 stakingRound, uint256 amount, EventResult selectedResult) external;
     function setEventResult(uint256 eventId, EventResult result) external;
     function finishEvent(uint256 eventId) external;
     function getEventBetIds(uint256 eventId) external view returns (uint256[] memory);

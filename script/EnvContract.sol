@@ -9,31 +9,23 @@ contract EnvContract is Script {
     struct CoreAddresses {
         address usdtTokenAddress;
         address proxyYoloToken;
-        address proxyStakingManager;
+        address proxyUserManager;
         address proxyEventManager;
-        address proxyDaoRewardManager;
         address proxyFomoTreasureManager;
-        address proxyAirdropManager;
-        address proxyMarketManager;
-        address proxyEcosystemManager;
-        address proxyCapitalManager;
-        address proxyTechManager;
+        address proxyCardManager;
+        address proxyLpManager;
     }
 
-    function getAddresses() internal returns (CoreAddresses memory addresses) {
+    function getAddresses() internal view returns (CoreAddresses memory addresses) {
         string memory json = _readDeployJson();
 
         addresses.usdtTokenAddress = _parseAddress(json, ".usdtTokenAddress");
         addresses.proxyYoloToken = _parseAddress(json, ".proxyYoloToken");
-        addresses.proxyStakingManager = _parseAddress(json, ".proxyStakingManager");
+        addresses.proxyUserManager = _parseAddress(json, ".proxyUserManager");
         addresses.proxyEventManager = _parseAddress(json, ".proxyEventManager");
-        addresses.proxyDaoRewardManager = _parseAddress(json, ".proxyDaoRewardManager");
         addresses.proxyFomoTreasureManager = _parseAddress(json, ".proxyFomoTreasureManager");
-        addresses.proxyAirdropManager = _parseAddress(json, ".proxyAirdropManager");
-        addresses.proxyMarketManager = _parseAddress(json, ".proxyMarketManager");
-        addresses.proxyEcosystemManager = _parseAddress(json, ".proxyEcosystemManager");
-        addresses.proxyCapitalManager = _parseAddress(json, ".proxyCapitalManager");
-        addresses.proxyTechManager = _parseAddress(json, ".proxyTechManager");
+        addresses.proxyCardManager = _parseAddress(json, ".proxyCardManager");
+        addresses.proxyLpManager = _parseAddress(json, ".proxyLpManager");
     }
 
     function getDeployPath() public view returns (string memory) {
@@ -70,6 +62,22 @@ contract EnvContract is Script {
 
     function getRewardSenderAddress() public view returns (address) {
         return _envAddressOr("REWARD_SENDER", getManagerAddress());
+    }
+
+    function getContractCallerAddress() public view returns (address) {
+        return _envAddressOr("CONTRACT_CALLER", getManagerAddress());
+    }
+
+    function getFundingPodAddress() public view returns (address) {
+        return _envAddressOr("FUNDING_POD", address(0));
+    }
+
+    function getEventManagerAddress() public view returns (address) {
+        return _envAddressOr("EVENT_MANAGER", address(0));
+    }
+
+    function getCardNftJson() public view returns (string memory) {
+        return _envStringOr("CARD_NFT_JSON", "");
     }
 
     function getProxyAdminAddress(address proxy) internal view returns (address) {
@@ -109,6 +117,14 @@ contract EnvContract is Script {
 
     function _envAddressOr(string memory key, address fallbackValue) internal view returns (address value) {
         try vm.envAddress(key) returns (address envValue) {
+            value = envValue;
+        } catch {
+            value = fallbackValue;
+        }
+    }
+
+    function _envStringOr(string memory key, string memory fallbackValue) internal view returns (string memory value) {
+        try vm.envString(key) returns (string memory envValue) {
             value = envValue;
         } catch {
             value = fallbackValue;

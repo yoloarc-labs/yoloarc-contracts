@@ -2,38 +2,18 @@
 pragma solidity ^0.8.20;
 
 import {console} from "forge-std/Script.sol";
-import {ITransparentUpgradeableProxy, TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
-import {ProxyAdmin} from "@openzeppelin/contracts/proxy/transparent/ProxyAdmin.sol";
+import {ITransparentUpgradeableProxy, ProxyAdmin, TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 
 import {InitContract} from "./InitContract.sol";
 import {MockERC20} from "./MockERC20.sol";
 import {YoloToken} from "../src/token/YoloToken.sol";
 import {IYoloToken} from "../src/interfaces/IYoloToken.sol";
-import {StakingManager} from "../src/core/StakingManager.sol";
-import {EventManager} from "../src/core/EventManager.sol";
-import {DaoRewardManager} from "../src/token/allocation/DaoRewardManager.sol";
-import {FomoTreasureManager} from "../src/token/allocation/FomoTreasureManager.sol";
-import {AirdropManager} from "../src/token/allocation/AirdropManager.sol";
-import {MarketManager} from "../src/token/allocation/MarketManager.sol";
-import {CapitalManager} from "../src/token/allocation/CapitalManager.sol";
-import {EcosystemManager} from "../src/token/allocation/EcosystemManager.sol";
-import {TechManager} from "../src/token/allocation/TechManager.sol";
+import {UserManager} from "../src/core/UserManager.sol";
+import {FomoTreasureManager} from "../src/core/FomoTreasureManager.sol";
+import {CardManager} from "../src/token/allocation/CardManager.sol";
+import {LpManager} from "../src/token/allocation/LpManager.sol";
 
 contract DeployStakingScript is InitContract {
-    struct DeployedContracts {
-        address usdtTokenAddress;
-        address proxyYoloToken;
-        address proxyStakingManager;
-        address proxyEventManager;
-        address proxyDaoRewardManager;
-        address proxyFomoTreasureManager;
-        address proxyAirdropManager;
-        address proxyMarketManager;
-        address proxyEcosystemManager;
-        address proxyCapitalManager;
-        address proxyTechManager;
-    }
-
     function run() external {
         deployAll();
     }
@@ -42,9 +22,12 @@ contract DeployStakingScript is InitContract {
         uint256 deployerPrivateKey = getCurPrivateKey();
         address owner = getOwnerAddress();
         address manager = getManagerAddress();
+        address contractCaller = getContractCallerAddress();
         address feeVault = getFeeVaultAddress();
-        address rewardSender = getRewardSenderAddress();
         address usdtAddress = getUsdtAddress();
+        address fundingPod = getFundingPodAddress();
+        address eventManagerAddress = getEventManagerAddress();
+        string memory nftJson = getCardNftJson();
 
         vm.startBroadcast(deployerPrivateKey);
 
@@ -54,106 +37,71 @@ contract DeployStakingScript is InitContract {
             mockUSDT.mint(owner, 100_000_000 ether);
         }
 
-        DeployedContracts memory deployed;
+        CoreAddresses memory deployed;
         deployed.usdtTokenAddress = usdtAddress;
+        deployed.proxyEventManager = eventManagerAddress;
+
+        UserManager userManagerImplementation = new UserManager();
+        deployed.proxyUserManager = _deployProxy(
+            address(userManagerImplementation),
+            owner,
+            abi.encodeWithSelector(UserManager.initialize.selector, owner, manager, address(0), contractCaller)
+        );
 
         YoloToken yoloTokenImplementation = new YoloToken();
         deployed.proxyYoloToken = _deployProxy(
             address(yoloTokenImplementation),
             owner,
-            abi.encodeWithSelector(YoloToken.initialize.selector, owner, usdtAddress)
-        );
-
-        DaoRewardManager daoRewardManagerImplementation = new DaoRewardManager();
-        deployed.proxyDaoRewardManager = _deployProxy(
-            address(daoRewardManagerImplementation),
-            owner,
-            abi.encodeWithSelector(DaoRewardManager.initialize.selector, owner, deployed.proxyYoloToken)
+            abi.encodeWithSelector(
+                YoloToken.initialize.selector,
+                owner,
+                deployed.proxyUserManager,
+                usdtAddress,
+                fundingPod == address(0) ? manager : fundingPod
+            )
         );
 
         FomoTreasureManager fomoTreasureManagerImplementation = new FomoTreasureManager();
         deployed.proxyFomoTreasureManager = _deployProxy(
             address(fomoTreasureManagerImplementation),
             owner,
+            abi.encodeWithSelector(FomoTreasureManager.initialize.selector, owner, deployed.proxyYoloToken)
+        );
+
+        CardManager cardManagerImplementation = new CardManager();
+        deployed.proxyCardManager = _deployProxy(
+            address(cardManagerImplementation),
+            owner,
             abi.encodeWithSelector(
-                FomoTreasureManager.initialize.selector,
+                CardManager.initialize.selector,
                 owner,
                 manager,
                 usdtAddress,
                 feeVault,
-                rewardSender
+                contractCaller,
+                nftJson
             )
         );
 
-        AirdropManager airdropManagerImplementation = new AirdropManager();
-        deployed.proxyAirdropManager = _deployProxy(
-            address(airdropManagerImplementation),
-            owner,
-            abi.encodeWithSelector(AirdropManager.initialize.selector, owner, manager, deployed.proxyYoloToken)
-        );
-
-        MarketManager marketManagerImplementation = new MarketManager();
-        deployed.proxyMarketManager = _deployProxy(
-            address(marketManagerImplementation),
-            owner,
-            abi.encodeWithSelector(MarketManager.initialize.selector, owner, manager, deployed.proxyYoloToken)
-        );
-
-        EcosystemManager ecosystemManagerImplementation = new EcosystemManager();
-        deployed.proxyEcosystemManager = _deployProxy(
-            address(ecosystemManagerImplementation),
-            owner,
-            abi.encodeWithSelector(EcosystemManager.initialize.selector, owner, manager, deployed.proxyYoloToken)
-        );
-
-        CapitalManager capitalManagerImplementation = new CapitalManager();
-        deployed.proxyCapitalManager = _deployProxy(
-            address(capitalManagerImplementation),
-            owner,
-            abi.encodeWithSelector(CapitalManager.initialize.selector, owner, manager, deployed.proxyYoloToken)
-        );
-
-        TechManager techManagerImplementation = new TechManager();
-        deployed.proxyTechManager = _deployProxy(
-            address(techManagerImplementation),
-            owner,
-            abi.encodeWithSelector(TechManager.initialize.selector, owner, manager, deployed.proxyYoloToken)
-        );
-
-        StakingManager stakingManagerImplementation = new StakingManager();
-        deployed.proxyStakingManager = _deployProxy(
-            address(stakingManagerImplementation),
+        LpManager lpManagerImplementation = new LpManager();
+        deployed.proxyLpManager = _deployProxy(
+            address(lpManagerImplementation),
             owner,
             abi.encodeWithSelector(
-                StakingManager.initialize.selector,
+                LpManager.initialize.selector,
                 owner,
-                manager,
+                owner,
                 deployed.proxyYoloToken,
-                usdtAddress,
-                manager,
-                IYoloToken(deployed.proxyYoloToken)
+                usdtAddress
             )
         );
 
-        EventManager eventManagerImplementation = new EventManager();
-        deployed.proxyEventManager = _deployProxy(
-            address(eventManagerImplementation),
-            owner,
-            abi.encodeWithSelector(
-                EventManager.initialize.selector,
-                owner,
-                manager,
-                deployed.proxyYoloToken,
-                usdtAddress,
-                IYoloToken(deployed.proxyYoloToken)
-            )
-        );
-
-        EventManager(payable(deployed.proxyEventManager)).setStakingManager(deployed.proxyStakingManager);
-        StakingManager(payable(deployed.proxyStakingManager)).setManager(deployed.proxyEventManager);
+        UserManager(payable(deployed.proxyUserManager)).setYoloToken(deployed.proxyYoloToken);
+        YoloToken(payable(deployed.proxyYoloToken)).setPlatformAddress(deployed.proxyFomoTreasureManager);
+        CardManager(payable(deployed.proxyCardManager)).setFundManager(manager);
 
         _configureTokenPools(deployed);
-        _configureAuthorizedCallers(deployed, manager);
+        _configureAuthorizedCallers(deployed, owner, manager, contractCaller);
 
         vm.stopBroadcast();
 
@@ -167,21 +115,8 @@ contract DeployStakingScript is InitContract {
 
         vm.startBroadcast(deployerPrivateKey);
 
-        yoloTokenProxyAdmin.upgradeAndCall(
-            ITransparentUpgradeableProxy(address(yoloToken)),
-            address(new YoloToken()),
-            ""
-        );
-        stakingManagerProxyAdmin.upgradeAndCall(
-            ITransparentUpgradeableProxy(address(stakingManager)),
-            address(new StakingManager()),
-            ""
-        );
-        eventManagerProxyAdmin.upgradeAndCall(
-            ITransparentUpgradeableProxy(address(eventManager)),
-            address(new EventManager()),
-            ""
-        );
+        _upgradeProxy(yoloTokenProxyAdmin, address(yoloToken), address(new YoloToken()));
+        _upgradeProxy(userManagerProxyAdmin, address(userManager), address(new UserManager()));
 
         vm.stopBroadcast();
     }
@@ -192,41 +127,9 @@ contract DeployStakingScript is InitContract {
 
         vm.startBroadcast(deployerPrivateKey);
 
-        daoRewardManagerProxyAdmin.upgradeAndCall(
-            ITransparentUpgradeableProxy(address(daoRewardManager)),
-            address(new DaoRewardManager()),
-            ""
-        );
-        fomoTreasureManagerProxyAdmin.upgradeAndCall(
-            ITransparentUpgradeableProxy(address(fomoTreasureManager)),
-            address(new FomoTreasureManager()),
-            ""
-        );
-        airdropManagerProxyAdmin.upgradeAndCall(
-            ITransparentUpgradeableProxy(address(airdropManager)),
-            address(new AirdropManager()),
-            ""
-        );
-        marketManagerProxyAdmin.upgradeAndCall(
-            ITransparentUpgradeableProxy(address(marketManager)),
-            address(new MarketManager()),
-            ""
-        );
-        ecosystemManagerProxyAdmin.upgradeAndCall(
-            ITransparentUpgradeableProxy(address(ecosystemManager)),
-            address(new EcosystemManager()),
-            ""
-        );
-        capitalManagerProxyAdmin.upgradeAndCall(
-            ITransparentUpgradeableProxy(address(capitalManager)),
-            address(new CapitalManager()),
-            ""
-        );
-        techManagerProxyAdmin.upgradeAndCall(
-            ITransparentUpgradeableProxy(address(techManager)),
-            address(new TechManager()),
-            ""
-        );
+        _upgradeProxy(fomoTreasureManagerProxyAdmin, address(fomoTreasureManager), address(new FomoTreasureManager()));
+        _upgradeProxy(cardManagerProxyAdmin, address(cardManager), address(new CardManager()));
+        _upgradeProxy(lpManagerProxyAdmin, address(lpManager), address(new LpManager()));
 
         vm.stopBroadcast();
     }
@@ -236,48 +139,36 @@ contract DeployStakingScript is InitContract {
 
         console.log("usdtTokenAddress:", address(usdt));
         console.log("proxyYoloToken:", address(yoloToken));
-        console.log("proxyStakingManager:", address(stakingManager));
-        console.log("proxyEventManager:", address(eventManager));
-        console.log("proxyDaoRewardManager:", address(daoRewardManager));
+        console.log("proxyUserManager:", address(userManager));
+        console.log("proxyEventManager:", eventManager);
         console.log("proxyFomoTreasureManager:", address(fomoTreasureManager));
-        console.log("proxyAirdropManager:", address(airdropManager));
-        console.log("proxyMarketManager:", address(marketManager));
-        console.log("proxyEcosystemManager:", address(ecosystemManager));
-        console.log("proxyCapitalManager:", address(capitalManager));
-        console.log("proxyTechManager:", address(techManager));
+        console.log("proxyCardManager:", address(cardManager));
+        console.log("proxyLpManager:", address(lpManager));
     }
 
     function printProxyAdmins() public {
         initContracts();
 
         console.log("yoloTokenProxyAdmin:", address(yoloTokenProxyAdmin));
-        console.log("stakingManagerProxyAdmin:", address(stakingManagerProxyAdmin));
+        console.log("userManagerProxyAdmin:", address(userManagerProxyAdmin));
         console.log("eventManagerProxyAdmin:", address(eventManagerProxyAdmin));
-        console.log("daoRewardManagerProxyAdmin:", address(daoRewardManagerProxyAdmin));
         console.log("fomoTreasureManagerProxyAdmin:", address(fomoTreasureManagerProxyAdmin));
-        console.log("airdropManagerProxyAdmin:", address(airdropManagerProxyAdmin));
-        console.log("marketManagerProxyAdmin:", address(marketManagerProxyAdmin));
-        console.log("ecosystemManagerProxyAdmin:", address(ecosystemManagerProxyAdmin));
-        console.log("capitalManagerProxyAdmin:", address(capitalManagerProxyAdmin));
-        console.log("techManagerProxyAdmin:", address(techManagerProxyAdmin));
+        console.log("cardManagerProxyAdmin:", address(cardManagerProxyAdmin));
+        console.log("lpManagerProxyAdmin:", address(lpManagerProxyAdmin));
     }
 
     function initYoloTokenPools() public {
         uint256 deployerPrivateKey = getCurPrivateKey();
         initContracts();
 
-        DeployedContracts memory deployed = DeployedContracts({
+        CoreAddresses memory deployed = CoreAddresses({
             usdtTokenAddress: address(usdt),
             proxyYoloToken: address(yoloToken),
-            proxyStakingManager: address(stakingManager),
-            proxyEventManager: address(eventManager),
-            proxyDaoRewardManager: address(daoRewardManager),
+            proxyUserManager: address(userManager),
+            proxyEventManager: eventManager,
             proxyFomoTreasureManager: address(fomoTreasureManager),
-            proxyAirdropManager: address(airdropManager),
-            proxyMarketManager: address(marketManager),
-            proxyEcosystemManager: address(ecosystemManager),
-            proxyCapitalManager: address(capitalManager),
-            proxyTechManager: address(techManager)
+            proxyCardManager: address(cardManager),
+            proxyLpManager: address(lpManager)
         });
 
         vm.startBroadcast(deployerPrivateKey);
@@ -290,67 +181,79 @@ contract DeployStakingScript is InitContract {
         return address(proxy);
     }
 
-    function _configureTokenPools(DeployedContracts memory deployed) internal {
+    function _configureTokenPools(CoreAddresses memory deployed) internal {
+        if (deployed.proxyLpManager == address(0) || deployed.proxyCardManager == address(0)) {
+            return;
+        }
+
         YoloToken yolo = YoloToken(payable(deployed.proxyYoloToken));
-        if (yolo.balanceOf(deployed.proxyDaoRewardManager) > 0) {
+        if (yolo.totalSupply() > 0) {
             return;
         }
 
         IYoloToken.YoloPool memory pools = IYoloToken.YoloPool({
-            nodePool: deployed.proxyStakingManager,
-            daoRewardPool: deployed.proxyDaoRewardManager,
-            airdropPool: deployed.proxyAirdropManager,
-            techFeePool: deployed.proxyFomoTreasureManager,
-            techPool: deployed.proxyTechManager,
-            capitalPool: deployed.proxyCapitalManager,
-            marketingFeePool: deployed.proxyMarketManager,
-            subTokenPool: deployed.proxyEventManager,
-            ecosystemPool: deployed.proxyEcosystemManager
+            lpPool: deployed.proxyLpManager,
+            cardPool: deployed.proxyCardManager
         });
 
-        address[] memory marketingPools = new address[](1);
-        marketingPools[0] = deployed.proxyMarketManager;
-
-        yolo.setPoolAddress(pools, marketingPools);
+        yolo.setPoolAddress(pools);
         yolo.poolAllocate();
     }
 
-    function _configureAuthorizedCallers(DeployedContracts memory deployed, address manager) internal {
-        DaoRewardManager(payable(deployed.proxyDaoRewardManager)).setAuthorizedCaller(manager, true);
-        AirdropManager(payable(deployed.proxyAirdropManager)).addAuthorizedCaller(manager);
-        MarketManager(payable(deployed.proxyMarketManager)).addAuthorizedCaller(manager);
-        EcosystemManager(payable(deployed.proxyEcosystemManager)).addAuthorizedCaller(manager);
-        CapitalManager(payable(deployed.proxyCapitalManager)).addAuthorizedCaller(manager);
-        TechManager(payable(deployed.proxyTechManager)).addAuthorizedCaller(manager);
+    function _configureAuthorizedCallers(
+        CoreAddresses memory deployed,
+        address owner,
+        address manager,
+        address contractCaller
+    ) internal {
+        FomoTreasureManager treasure = FomoTreasureManager(payable(deployed.proxyFomoTreasureManager));
+        LpManager lp = LpManager(payable(deployed.proxyLpManager));
+
+        treasure.setAuthorizedCaller(owner, true);
+        lp.addAuthorizedCaller(owner);
+
+        if (contractCaller != owner) {
+            treasure.setAuthorizedCaller(contractCaller, true);
+            lp.addAuthorizedCaller(contractCaller);
+        }
+
+        if (deployed.proxyEventManager != address(0) && deployed.proxyEventManager != owner && deployed.proxyEventManager != contractCaller) {
+            treasure.setAuthorizedCaller(deployed.proxyEventManager, true);
+            lp.addAuthorizedCaller(deployed.proxyEventManager);
+        }
+
+        if (manager != owner) {
+            treasure.setManager(manager);
+            lp.setManager(manager);
+        }
     }
 
-    function _logDeployments(DeployedContracts memory deployed) internal pure {
+    function _upgradeProxy(ProxyAdmin admin, address proxy, address implementation) internal {
+        if (proxy == address(0) || address(admin) == address(0)) {
+            return;
+        }
+        admin.upgradeAndCall(ITransparentUpgradeableProxy(proxy), implementation, "");
+    }
+
+    function _logDeployments(CoreAddresses memory deployed) internal pure {
         console.log("usdtTokenAddress:", deployed.usdtTokenAddress);
         console.log("proxyYoloToken:", deployed.proxyYoloToken);
-        console.log("proxyStakingManager:", deployed.proxyStakingManager);
+        console.log("proxyUserManager:", deployed.proxyUserManager);
         console.log("proxyEventManager:", deployed.proxyEventManager);
-        console.log("proxyDaoRewardManager:", deployed.proxyDaoRewardManager);
         console.log("proxyFomoTreasureManager:", deployed.proxyFomoTreasureManager);
-        console.log("proxyAirdropManager:", deployed.proxyAirdropManager);
-        console.log("proxyMarketManager:", deployed.proxyMarketManager);
-        console.log("proxyEcosystemManager:", deployed.proxyEcosystemManager);
-        console.log("proxyCapitalManager:", deployed.proxyCapitalManager);
-        console.log("proxyTechManager:", deployed.proxyTechManager);
+        console.log("proxyCardManager:", deployed.proxyCardManager);
+        console.log("proxyLpManager:", deployed.proxyLpManager);
     }
 
-    function _writeDeployments(DeployedContracts memory deployed) internal {
-        string memory obj = "deployment";
+    function _writeDeployments(CoreAddresses memory deployed) internal {
+        string memory obj = "deploy";
         vm.serializeAddress(obj, "usdtTokenAddress", deployed.usdtTokenAddress);
         vm.serializeAddress(obj, "proxyYoloToken", deployed.proxyYoloToken);
-        vm.serializeAddress(obj, "proxyStakingManager", deployed.proxyStakingManager);
+        vm.serializeAddress(obj, "proxyUserManager", deployed.proxyUserManager);
         vm.serializeAddress(obj, "proxyEventManager", deployed.proxyEventManager);
-        vm.serializeAddress(obj, "proxyDaoRewardManager", deployed.proxyDaoRewardManager);
         vm.serializeAddress(obj, "proxyFomoTreasureManager", deployed.proxyFomoTreasureManager);
-        vm.serializeAddress(obj, "proxyAirdropManager", deployed.proxyAirdropManager);
-        vm.serializeAddress(obj, "proxyMarketManager", deployed.proxyMarketManager);
-        vm.serializeAddress(obj, "proxyEcosystemManager", deployed.proxyEcosystemManager);
-        vm.serializeAddress(obj, "proxyCapitalManager", deployed.proxyCapitalManager);
-        string memory finalJson = vm.serializeAddress(obj, "proxyTechManager", deployed.proxyTechManager);
+        vm.serializeAddress(obj, "proxyCardManager", deployed.proxyCardManager);
+        string memory finalJson = vm.serializeAddress(obj, "proxyLpManager", deployed.proxyLpManager);
         vm.writeJson(finalJson, getDeployPath());
     }
 }

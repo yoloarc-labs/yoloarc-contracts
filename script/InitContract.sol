@@ -6,64 +6,50 @@ import {ProxyAdmin} from "@openzeppelin/contracts/proxy/transparent/ProxyAdmin.s
 import {EnvContract} from "./EnvContract.sol";
 import {MockERC20} from "./MockERC20.sol";
 import {YoloToken} from "../src/token/YoloToken.sol";
-import {StakingManager} from "../src/core/StakingManager.sol";
-import {EventManager} from "../src/core/EventManager.sol";
-import {DaoRewardManager} from "../src/token/allocation/DaoRewardManager.sol";
-import {FomoTreasureManager} from "../src/token/allocation/FomoTreasureManager.sol";
-import {AirdropManager} from "../src/token/allocation/AirdropManager.sol";
-import {MarketManager} from "../src/token/allocation/MarketManager.sol";
-import {CapitalManager} from "../src/token/allocation/CapitalManager.sol";
-import {EcosystemManager} from "../src/token/allocation/EcosystemManager.sol";
-import {TechManager} from "../src/token/allocation/TechManager.sol";
+import {UserManager} from "../src/core/UserManager.sol";
+import {FomoTreasureManager} from "../src/core/FomoTreasureManager.sol";
+import {CardManager} from "../src/token/allocation/CardManager.sol";
+import {LpManager} from "../src/token/allocation/LpManager.sol";
 
 contract InitContract is EnvContract {
     YoloToken public yoloToken;
-    StakingManager public stakingManager;
-    EventManager public eventManager;
-    DaoRewardManager public daoRewardManager;
+    UserManager public userManager;
+    address public eventManager;
     FomoTreasureManager public fomoTreasureManager;
-    AirdropManager public airdropManager;
-    MarketManager public marketManager;
-    CapitalManager public capitalManager;
-    EcosystemManager public ecosystemManager;
-    TechManager public techManager;
+    CardManager public cardManager;
+    LpManager public lpManager;
     MockERC20 public usdt;
 
     ProxyAdmin public yoloTokenProxyAdmin;
-    ProxyAdmin public stakingManagerProxyAdmin;
+    ProxyAdmin public userManagerProxyAdmin;
     ProxyAdmin public eventManagerProxyAdmin;
-    ProxyAdmin public daoRewardManagerProxyAdmin;
     ProxyAdmin public fomoTreasureManagerProxyAdmin;
-    ProxyAdmin public airdropManagerProxyAdmin;
-    ProxyAdmin public marketManagerProxyAdmin;
-    ProxyAdmin public capitalManagerProxyAdmin;
-    ProxyAdmin public ecosystemManagerProxyAdmin;
-    ProxyAdmin public techManagerProxyAdmin;
+    ProxyAdmin public cardManagerProxyAdmin;
+    ProxyAdmin public lpManagerProxyAdmin;
 
     function initContracts() internal {
         CoreAddresses memory addresses = getAddresses();
 
         usdt = MockERC20(payable(addresses.usdtTokenAddress));
         yoloToken = YoloToken(payable(addresses.proxyYoloToken));
-        stakingManager = StakingManager(payable(addresses.proxyStakingManager));
-        eventManager = EventManager(payable(addresses.proxyEventManager));
-        daoRewardManager = DaoRewardManager(payable(addresses.proxyDaoRewardManager));
+        userManager = UserManager(payable(addresses.proxyUserManager));
+        eventManager = addresses.proxyEventManager;
         fomoTreasureManager = FomoTreasureManager(payable(addresses.proxyFomoTreasureManager));
-        airdropManager = AirdropManager(payable(addresses.proxyAirdropManager));
-        marketManager = MarketManager(payable(addresses.proxyMarketManager));
-        capitalManager = CapitalManager(payable(addresses.proxyCapitalManager));
-        ecosystemManager = EcosystemManager(payable(addresses.proxyEcosystemManager));
-        techManager = TechManager(payable(addresses.proxyTechManager));
+        cardManager = CardManager(payable(addresses.proxyCardManager));
+        lpManager = LpManager(payable(addresses.proxyLpManager));
 
-        yoloTokenProxyAdmin = ProxyAdmin(getProxyAdminAddress(address(yoloToken)));
-        stakingManagerProxyAdmin = ProxyAdmin(getProxyAdminAddress(address(stakingManager)));
-        eventManagerProxyAdmin = ProxyAdmin(getProxyAdminAddress(address(eventManager)));
-        daoRewardManagerProxyAdmin = ProxyAdmin(getProxyAdminAddress(address(daoRewardManager)));
-        fomoTreasureManagerProxyAdmin = ProxyAdmin(getProxyAdminAddress(address(fomoTreasureManager)));
-        airdropManagerProxyAdmin = ProxyAdmin(getProxyAdminAddress(address(airdropManager)));
-        marketManagerProxyAdmin = ProxyAdmin(getProxyAdminAddress(address(marketManager)));
-        capitalManagerProxyAdmin = ProxyAdmin(getProxyAdminAddress(address(capitalManager)));
-        ecosystemManagerProxyAdmin = ProxyAdmin(getProxyAdminAddress(address(ecosystemManager)));
-        techManagerProxyAdmin = ProxyAdmin(getProxyAdminAddress(address(techManager)));
+        yoloTokenProxyAdmin = _proxyAdminOrZero(address(yoloToken));
+        userManagerProxyAdmin = _proxyAdminOrZero(address(userManager));
+        eventManagerProxyAdmin = _proxyAdminOrZero(eventManager);
+        fomoTreasureManagerProxyAdmin = _proxyAdminOrZero(address(fomoTreasureManager));
+        cardManagerProxyAdmin = _proxyAdminOrZero(address(cardManager));
+        lpManagerProxyAdmin = _proxyAdminOrZero(address(lpManager));
+    }
+
+    function _proxyAdminOrZero(address proxy) internal view returns (ProxyAdmin) {
+        if (proxy == address(0)) {
+            return ProxyAdmin(address(0));
+        }
+        return ProxyAdmin(getProxyAdminAddress(proxy));
     }
 }

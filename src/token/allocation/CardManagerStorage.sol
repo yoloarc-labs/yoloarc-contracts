@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.20;
 
-import "../../interfaces/IFomoTreasureManager.sol";
+import "../../interfaces/ICardManager.sol";
 
-abstract contract FomoTreasureManagerStorage is IFomoTreasureManager {
+abstract contract CardManagerStorage is ICardManager {
+    // Base card price: 100 U, increased by 20% for every 10,000 cards sold.
+    uint256 public constant minAmount = 100 * 10 ** 18;
+
     enum StakingRewardType {
         SixThousandType,
         FourteenThousandType
@@ -21,13 +24,15 @@ abstract contract FomoTreasureManagerStorage is IFomoTreasureManager {
     address public fundManager;
 
     address public adminFeeVault;
-    address public rewardSender;
+    address public contractCaller;
+
+    uint256 public _nextTokenId;
+
+    string public nftJson;
 
     mapping(address => uint256) public fundingBalance;
-    mapping(uint8 => uint256) public stakingRewardBalance;
-    mapping(address => mapping(address => uint256)) public awardWinnerBalance;
 
-    mapping(address => mapping(address => uint256)) public predictionLossAirdrop;
+    mapping(address => mapping(address => uint256)) public validatorBalance;
 
-    uint256[97] private __gap;
+    uint256[100] private __gap;
 }

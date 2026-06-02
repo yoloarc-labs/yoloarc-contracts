@@ -2,60 +2,14 @@
 pragma solidity ^0.8.20;
 
 import "../interfaces/IEventManager.sol";
-import "../interfaces/IStakingManager.sol";
 import "../interfaces/IYoloToken.sol";
-
 
 abstract contract EventManagerStorage is IEventManager  {
     address public manager;
-
-    address public eventManager;
-
-    address public fundingPod;
-
-    address public feeVaultPod;
-
-    address public oracle;
-
     address public USDT;
-
     address public underlyingToken;
 
     IYoloToken public yoloTokenAddress;
 
-    IStakingManager public stakingManager;
-
-    uint256 public feeBalances;
-
-    uint256 public defaultSettlementFeeRate;
-
-    mapping(uint256 => Event) public events;
-
-    uint256[] public eventIds;
-
-    mapping(uint256 => uint256) public eventIdIndex;
-
-    mapping(uint256 => uint256) public oracleRequests;
-
-    uint256 public nextBetId;
-
-    mapping(uint256 => BetRecord) public betRecords;
-
-    mapping(uint256 => uint256[]) internal eventBetIds;
-
-    mapping(address => uint256[]) internal userBetIds;
-
-    mapping(uint256 => uint256) public eventYesAmount;
-
-    mapping(uint256 => uint256) public eventNoAmount;
-
-    mapping(uint256 => uint256) public tokenYesAmount;
-    mapping(uint256 => uint256) public tokenNoAmount;
-    mapping(uint256 => uint256) public stakingYesAmount;
-    mapping(uint256 => uint256) public stakingNoAmount;
-
-    modifier onlyEventManager() {
-        if (msg.sender != manager && msg.sender != eventManager) revert CallerIsNotEventManager();
-        _;
-    }
+    uint256[100] private __gap;
 }
