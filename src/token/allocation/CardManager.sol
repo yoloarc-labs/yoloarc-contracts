@@ -26,7 +26,7 @@ contract CardManager is
     using SafeERC20 for IERC20;
 
     string private constant CARD_NAME = "YoloArc Card";
-    string private constant CARD_SYMBOL = "YAC";
+    string private constant CARD_SYMBOL = "Yolo Card";
 
     constructor() {
         _disableInitializers();
@@ -53,15 +53,14 @@ contract CardManager is
         emit Deposit(NativeTokenAddress, msg.sender, msg.value);
     }
 
-    function initialize(address initialOwner, address _manager, address _underlyingToken, address _adminFeeVault, address _contractCaller, string memory _nftJson) public initializer {
+    function initialize(address initialOwner, address _manager,  address _contractCaller, address _underlyingToken,  string memory _nftJson) public initializer {
         __Ownable_init(initialOwner);
         __ERC721_init(CARD_NAME, CARD_SYMBOL);
         __ERC721Burnable_init();
         __ERC721URIStorage_init();
         manager = _manager;
-        underlyingToken = _underlyingToken;
-        adminFeeVault = _adminFeeVault;
         contractCaller = _contractCaller;
+        underlyingToken = _underlyingToken;
         nftJson = _nftJson;
     }
 
@@ -135,6 +134,7 @@ contract CardManager is
         IERC20(underlyingToken).safeTransfer(recipient, amount);
 
         emit Withdraw(underlyingToken, msg.sender, recipient, amount);
+
         return true;
     }
 

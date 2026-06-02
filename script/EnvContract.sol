@@ -18,7 +18,6 @@ contract EnvContract is Script {
 
     function getAddresses() internal view returns (CoreAddresses memory addresses) {
         string memory json = _readDeployJson();
-
         addresses.usdtTokenAddress = _parseAddress(json, ".usdtTokenAddress");
         addresses.proxyYoloToken = _parseAddress(json, ".proxyYoloToken");
         addresses.proxyUserManager = _parseAddress(json, ".proxyUserManager");
@@ -56,10 +55,6 @@ contract EnvContract is Script {
         return _envAddressOr("USDT_ADDRESS", address(0));
     }
 
-    function getFeeVaultAddress() public view returns (address) {
-        return _envAddressOr("FEE_VAULT", getOwnerAddress());
-    }
-
     function getRewardSenderAddress() public view returns (address) {
         return _envAddressOr("REWARD_SENDER", getManagerAddress());
     }
@@ -68,26 +63,16 @@ contract EnvContract is Script {
         return _envAddressOr("CONTRACT_CALLER", getManagerAddress());
     }
 
-    function getFundingPodAddress() public view returns (address) {
-        return _envAddressOr("FUNDING_POD", address(0));
-    }
-
-    function getEventManagerAddress() public view returns (address) {
-        return _envAddressOr("EVENT_MANAGER", address(0));
-    }
-
     function getCardNftJson() public view returns (string memory) {
         return _envStringOr("CARD_NFT_JSON", "");
     }
 
     function getProxyAdminAddress(address proxy) internal view returns (address) {
+        address CHEATCODE_ADDRESS = 0x7109709ECfa91a80626fF3989D68f67F5b1DD12D;
+        Vm vm = Vm(CHEATCODE_ADDRESS);
+
         bytes32 adminSlot = vm.load(proxy, ERC1967Utils.ADMIN_SLOT);
         return address(uint160(uint256(adminSlot)));
-    }
-
-    function getImplementationAddress(address proxy) internal view returns (address) {
-        bytes32 implementationSlot = vm.load(proxy, ERC1967Utils.IMPLEMENTATION_SLOT);
-        return address(uint160(uint256(implementationSlot)));
     }
 
     function _readDeployJson() internal view returns (string memory json) {
