@@ -197,7 +197,7 @@ contract CardManager is
         return super.supportsInterface(interfaceId);
     }
 
-    function cardPrice() public view returns (uint256) {
+    function cardPrice() external view returns (uint256) {
         uint256 tier = _nextTokenId / 10000;
         return minAmount * (100 + (tier * 20)) / 100;
     }
