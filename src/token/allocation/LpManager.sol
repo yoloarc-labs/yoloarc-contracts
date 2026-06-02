@@ -29,11 +29,19 @@ contract LpManager is Initializable, OwnableUpgradeable, PausableUpgradeable, Lp
         _;
     }
 
-    function initialize(address initialOwner, address initialManager, address _underlyingToken, address _usdt) public initializer {
+    function initialize(
+        address initialOwner,
+        address initialManager,
+        address _underlyingToken,
+        address _usdt,
+        address _v2Router
+    ) public initializer {
+        require(_v2Router != address(0), "LpManager: _v2Router cannot be zero address");
         __Ownable_init(initialOwner);
         manager = initialManager;
         underlyingToken = _underlyingToken;
         USDT = _usdt;
+        v2Router = _v2Router;
     }
 
     function addAuthorizedCaller(address caller) external onlyManager {
@@ -64,11 +72,11 @@ contract LpManager is Initializable, OwnableUpgradeable, PausableUpgradeable, Lp
     function addLiquidity(uint256 tokenAmount, uint256 usdtAmount, address to) external onlyManager {
         require(tokenAmount > 0 && usdtAmount > 0, "Amounts must be greater than 0");
 
-        IERC20(underlyingToken).approve(V2_ROUTER, tokenAmount);
+        IERC20(underlyingToken).approve(v2Router, tokenAmount);
 
-        IERC20(USDT).approve(V2_ROUTER, usdtAmount);
+        IERC20(USDT).approve(v2Router, usdtAmount);
 
-        (uint256 amount0Used, uint256 amount1Used, uint256 liquidityAdded) = IPancakeRouter02(V2_ROUTER)
+        (uint256 amount0Used, uint256 amount1Used, uint256 liquidityAdded) = IPancakeRouter02(v2Router)
             .addLiquidity(USDT, underlyingToken, usdtAmount, tokenAmount, 0, 0, to, block.timestamp);
 
         emit LiquidityAdded(liquidityAdded, amount0Used, amount1Used);

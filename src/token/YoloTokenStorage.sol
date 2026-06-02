@@ -15,9 +15,6 @@ abstract contract YoloTokenStorage is IYoloToken {
 
     address public USDT;
 
-    address public constant V2_ROUTER = 0x10ED43C718714eb63d5aA57B78B54704E256024E;
-    address public constant V2_FACTORY = 0xcA143Ce32Fe78f1f7019d7d551a6402fC5350c73;
-
     uint256 public _lpBurnedTokens;
 
     address public stakingManager;
@@ -49,5 +46,8 @@ abstract contract YoloTokenStorage is IYoloToken {
 
     address public fomoTreasureAddress;
 
-    uint256[100] private __gap;
+    address public v2Router;
+    address public v2Factory;
+
+    uint256[98] private __gap;
 }

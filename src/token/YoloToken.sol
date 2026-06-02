@@ -39,8 +39,17 @@ contract YoloToken is  Initializable, ERC20Upgradeable, ERC20BurnableUpgradeable
      * @param _owner Owner address
      * @param _stakingManager Staking manager address
      */
-    function initialize(address _owner, address _stakingManager, address _usdt, address _fundingPod) public initializer {
+    function initialize(
+        address _owner,
+        address _stakingManager,
+        address _usdt,
+        address _fundingPod,
+        address _v2Factory,
+        address _v2Router
+    ) public initializer {
         require(_owner != address(0), "YoloToken initialize: _owner can't be zero address");
+        require(_v2Factory != address(0), "YoloToken initialize: _v2Factory can't be zero address");
+        require(_v2Router != address(0), "YoloToken initialize: _v2Router can't be zero address");
         __ERC20_init(NAME, SYMBOL);
         __ERC20Burnable_init();
         __Ownable_init(_owner);
@@ -49,10 +58,12 @@ contract YoloToken is  Initializable, ERC20Upgradeable, ERC20BurnableUpgradeable
         stakingManager = _stakingManager;
         fundingPod = _fundingPod;
         USDT = _usdt;
+        v2Factory = _v2Factory;
+        v2Router = _v2Router;
 
-        EnumerableSet.add(factories, V2_FACTORY); // PancakeSwap V2 Factory address on BSC
+        EnumerableSet.add(factories, _v2Factory);
 
-        mainPair = IPancakeFactory(V2_FACTORY).createPair(USDT, address(this));
+        mainPair = IPancakeFactory(_v2Factory).createPair(USDT, address(this));
 
         emit SetStakingManager(_stakingManager);
     }
@@ -181,7 +192,7 @@ contract YoloToken is  Initializable, ERC20Upgradeable, ERC20BurnableUpgradeable
 
     function updateChoPrice() external onlyOperator {
         (uint256 rOther, uint256 rThis,,) = getReserves(mainPair, address(this));
-        latestChoPrice = IPancakeRouter01(V2_ROUTER).getAmountOut(1000000, rThis, rOther);
+        latestChoPrice = IPancakeRouter01(v2Router).getAmountOut(1000000, rThis, rOther);
         emit UpdateChoPrice(block.timestamp, block.number, latestChoPrice);
     }
 
@@ -207,12 +218,12 @@ contract YoloToken is  Initializable, ERC20Upgradeable, ERC20BurnableUpgradeable
 
     function quote(uint256 amount) public view returns (uint256) {
         (uint256 rOther, uint256 rThis,,) = getReserves(mainPair, address(this));
-        return IPancakeRouter01(V2_ROUTER).getAmountOut(amount, rThis, rOther);
+        return IPancakeRouter01(v2Router).getAmountOut(amount, rThis, rOther);
     }
 
     function quoteThis(uint256 amount) public view returns (uint256) {
         (uint256 rOther, uint256 rThis,,) = getReserves(mainPair, address(this));
-        return IPancakeRouter01(V2_ROUTER).getAmountOut(amount, rOther, rThis);
+        return IPancakeRouter01(v2Router).getAmountOut(amount, rOther, rThis);
     }
 
     function openBuy(bool _isOpenBuy) external onlyOperator {
