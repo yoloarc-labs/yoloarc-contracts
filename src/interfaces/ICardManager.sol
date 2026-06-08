@@ -47,5 +47,6 @@ interface ICardManager {
     function validatorMineClaim(address tokenAddress, uint256 amount) external;
 
     function buyCard(uint256 amount) external returns (bool, uint256);
+    function buyCards(uint256 quantity, uint256 amount) external returns (bool, uint256[] memory);
     function cardPrice() external view returns (uint256);
 }

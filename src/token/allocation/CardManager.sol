@@ -162,21 +162,12 @@ contract CardManager is
     }
 
     function buyCard(uint256 amount) external nonReentrant returns (bool, uint256) {
-        uint256 currentPrice = cardPrice();
+        uint256[] memory tokenIds = _buyCards(msg.sender, 1, amount);
+        return (true, tokenIds[0]);
+    }
 
-        require(IERC20(underlyingToken).allowance(msg.sender, address(this)) >= currentPrice, "CardManager buyCard: User allowance must more than price");
-
-        require(amount >= currentPrice, "CardManager buyCard: amount must be more than price");
-
-        IERC20(underlyingToken).safeTransferFrom(msg.sender, address(this), currentPrice);
-
-        uint256 tokenId = _nextTokenId++;
-
-        _safeMint(msg.sender, tokenId);
-
-        emit CreateNFT(msg.sender, tokenId, nftJson);
-
-        return (true, tokenId);
+    function buyCards(uint256 quantity, uint256 amount) external nonReentrant returns (bool, uint256[] memory) {
+        return (true, _buyCards(msg.sender, quantity, amount));
     }
 
     function tokenURI(uint256 tokenId) public view override(ERC721Upgradeable, ERC721URIStorageUpgradeable) returns (string memory) {
@@ -211,6 +202,49 @@ contract CardManager is
     }
 
     // ========= internal =========
+    function _buyCards(address buyer, uint256 quantity, uint256 amount) internal returns (uint256[] memory tokenIds) {
+        require(quantity > 0, "CardManager buyCards: quantity must be greater than zero");
+
+        uint256 totalPrice = _batchCardPrice(quantity);
+
+        require(
+            IERC20(underlyingToken).allowance(buyer, address(this)) >= totalPrice,
+            "CardManager buyCard: User allowance must more than price"
+        );
+        require(amount >= totalPrice, "CardManager buyCard: amount must be more than price");
+
+        IERC20(underlyingToken).safeTransferFrom(buyer, address(this), totalPrice);
+
+        tokenIds = new uint256[](quantity);
+
+        for (uint256 i = 0; i < quantity;) {
+            tokenIds[i] = _mintCard(buyer);
+            unchecked {
+                ++i;
+            }
+        }
+    }
+
+    function _batchCardPrice(uint256 quantity) internal view returns (uint256 totalPrice) {
+        uint256 nextTokenId = _nextTokenId;
+
+        for (uint256 i = 0; i < quantity;) {
+            uint256 tier = nextTokenId / 10000;
+            totalPrice += minAmount * (100 + (tier * 20)) / 100;
+            unchecked {
+                ++nextTokenId;
+                ++i;
+            }
+        }
+        return totalPrice;
+    }
+
+    function _mintCard(address buyer) internal returns (uint256 tokenId) {
+        tokenId = _nextTokenId++;
+        _safeMint(buyer, tokenId);
+        emit CreateNFT(buyer, tokenId, nftJson);
+    }
+
     function _tokenBalance() internal view virtual returns (uint256) {
         return IERC20(underlyingToken).balanceOf(address(this));
     }
