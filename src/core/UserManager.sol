@@ -10,6 +10,7 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import "./UserManagerStorage.sol";
+import "../utils/SwapHelper.sol";
 
 contract UserManager is Initializable, OwnableUpgradeable, PausableUpgradeable, ReentrancyGuard, UserManagerStorage {
     using SafeERC20 for IERC20;
@@ -43,6 +44,18 @@ contract UserManager is Initializable, OwnableUpgradeable, PausableUpgradeable, 
         emit SetYoloToken(_yoloToken);
     }
 
+    function setUsdtToken(address _usdt) external onlyOwner {
+        require(_usdt != address(0), "UserManager: usdt token cannot be zero address");
+        USDT = _usdt;
+        emit SetUsdtToken(_usdt);
+    }
+
+    function setV2Router(address _v2Router) external onlyOwner {
+        require(_v2Router != address(0), "UserManager: v2 router cannot be zero address");
+        V2_ROUTER = _v2Router;
+        emit SetV2Router(_v2Router);
+    }
+
     function bindRootInviter(address rootInviter, address user) external onlyCaller {
         require(rootInviter != address(0) && user != address(0), "Root inviter and user cannot be zero address");
         require(inviters[user] == address(0), "Root inviter already set");
@@ -58,35 +71,34 @@ contract UserManager is Initializable, OwnableUpgradeable, PausableUpgradeable, 
         }
     }
 
-    function stakingAndUseYolo(uint256 stakeAmount, uint256 betAmount) external nonReentrant whenNotPaused {
+    function stakingAndUseYolo(address[] calldata users, uint256[] calldata stakeUsdtAmount) external nonReentrant whenNotPaused {
         require(yoloToken != address(0), "UserManager: yolo token not set");
-        require(stakeAmount > 0 || betAmount > 0, "UserManager: invalid staking params");
+        require(USDT != address(0), "UserManager: usdt token not set");
+        require(V2_ROUTER != address(0), "UserManager: v2 router not set");
+        require(users.length == stakeUsdtAmount.length, "UserManager: users and amounts length mismatch");
+        require(users.length > 0, "UserManager: empty staking params");
 
-        _processUnlockedStakeLots(msg.sender);
+        for (uint256 i = 0; i < users.length; i++) {
+            address stakingUser = users[i];
+            uint256 usdtAmount = stakeUsdtAmount[i];
+            require(stakingUser != address(0), "UserManager: user cannot be zero address");
+            require(usdtAmount > 0, "UserManager: amount is zero");
 
-        if (stakeAmount > 0) {
-            IERC20(yoloToken).safeTransferFrom(msg.sender, address(this), stakeAmount);
-            stakedYoloBalance[msg.sender] += stakeAmount;
-            lockedStakedYoloBalance[msg.sender] += stakeAmount;
-            totalStakedYolo += stakeAmount;
+            _processUnlockedStakeLots(stakingUser);
+
+            IERC20(USDT).safeTransferFrom(msg.sender, address(this), usdtAmount);
+            uint256 yoloReceived = SwapHelper.swapV2(V2_ROUTER, USDT, yoloToken, usdtAmount, 0, address(this));
+            require(yoloReceived > 0, "No tokens received from swap");
+
+            stakedYoloBalance[stakingUser] += yoloReceived;
+            lockedStakedYoloBalance[stakingUser] += yoloReceived;
+            totalStakedYolo += yoloReceived;
 
             uint256 unlockAt = block.timestamp + RELEASE_DELAY;
-            stakingReleaseAt[msg.sender] = unlockAt;
-            stakeLots[msg.sender].push(StakeLot({amount: stakeAmount, unlockAt: unlockAt}));
+            stakingReleaseAt[stakingUser] = unlockAt;
+            stakeLots[stakingUser].push(StakeLot({amount: yoloReceived, unlockAt: unlockAt}));
 
-            emit StakingYolo(msg.sender, stakeAmount, stakedYoloBalance[msg.sender], unlockAt);
-        }
-
-        if (betAmount > 0) {
-            uint256 requiredUsage = (betAmount * SPORTS_USAGE_BPS) / BPS_DENOMINATOR;
-            require(requiredUsage > 0, "UserManager: bet amount too small");
-            require(usedStakedYoloBalance[msg.sender] == 0, "UserManager: staking yolo already in use");
-            require(stakedYoloBalance[msg.sender] >= requiredUsage, "UserManager: insufficient staked yolo");
-
-            _consumeStakeForUsage(msg.sender, requiredUsage);
-
-            usedStakedYoloBalance[msg.sender] = requiredUsage;
-            emit UseStakingYolo(msg.sender, requiredUsage, usedStakedYoloBalance[msg.sender], 0);
+            emit StakingYolo(stakingUser, usdtAmount, yoloReceived, stakedYoloBalance[stakingUser], unlockAt);
         }
     }
 

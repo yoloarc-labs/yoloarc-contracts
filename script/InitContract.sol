@@ -8,7 +8,6 @@ import {MockERC20} from "./MockERC20.sol";
 import {YoloToken} from "../src/token/YoloToken.sol";
 import {UserManager} from "../src/core/UserManager.sol";
 import {FomoTreasureManager} from "../src/core/FomoTreasureManager.sol";
-import {EventManager} from "../src/core/EventManager.sol";
 import {CardManager} from "../src/token/allocation/CardManager.sol";
 
 import {LpManager} from "../src/token/allocation/LpManager.sol";

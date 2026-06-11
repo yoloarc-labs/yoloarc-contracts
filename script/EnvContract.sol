@@ -10,7 +10,6 @@ contract EnvContract is Script {
         address usdtTokenAddress;
         address proxyYoloToken;
         address proxyUserManager;
-        address proxyEventManager;
         address proxyFomoTreasureManager;
         address proxyCardManager;
         address proxyLpManager;
@@ -21,7 +20,6 @@ contract EnvContract is Script {
         addresses.usdtTokenAddress = _parseAddress(json, ".usdtTokenAddress");
         addresses.proxyYoloToken = _parseAddress(json, ".proxyYoloToken");
         addresses.proxyUserManager = _parseAddress(json, ".proxyUserManager");
-        addresses.proxyEventManager = _parseAddress(json, ".proxyEventManager");
         addresses.proxyFomoTreasureManager = _parseAddress(json, ".proxyFomoTreasureManager");
         addresses.proxyCardManager = _parseAddress(json, ".proxyCardManager");
         addresses.proxyLpManager = _parseAddress(json, ".proxyLpManager");

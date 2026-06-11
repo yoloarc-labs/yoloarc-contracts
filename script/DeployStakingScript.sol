@@ -12,7 +12,6 @@ import {
 import {InitContract} from "./InitContract.sol";
 import {MockERC20} from "./MockERC20.sol";
 
-import {EventManager} from "../src/core/EventManager.sol";
 import {FomoTreasureManager} from "../src/core/FomoTreasureManager.sol";
 import {UserManager} from "../src/core/UserManager.sol";
 import {IYoloToken} from "../src/interfaces/IYoloToken.sol";
@@ -38,7 +37,6 @@ contract DeployStakingScript is InitContract {
 
     ProxyAdmin public yoloTokenProxyAdmin;
     ProxyAdmin public userManagerProxyAdmin;
-    ProxyAdmin public eventManagerProxyAdmin;
     ProxyAdmin public fomoTreasureManagerProxyAdmin;
     ProxyAdmin public cardManagerProxyAdmin;
     ProxyAdmin public lpManagerProxyAdmin;
@@ -54,9 +52,6 @@ contract DeployStakingScript is InitContract {
 
     UserManager public userManagerImplementation;
     UserManager public userManager;
-
-    EventManager public eventManagerImplementation;
-    EventManager public eventManager;
 
     FomoTreasureManager public fomoTreasureManagerImplementation;
     FomoTreasureManager public fomoTreasureManager;
@@ -117,19 +112,17 @@ contract DeployStakingScript is InitContract {
 
         yoloTokenImplementation = new YoloToken();
         userManagerImplementation = new UserManager();
-        eventManagerImplementation = new EventManager();
         fomoTreasureManagerImplementation = new FomoTreasureManager();
         cardManagerImplementation = new CardManager();
         lpManagerImplementation = new LpManager();
 
-        _upgrade(yoloTokenProxyAdmin, address(yoloToken), address(yoloTokenImplementation));
-        _upgrade(userManagerProxyAdmin, address(userManager), address(userManagerImplementation));
-        _upgrade(eventManagerProxyAdmin, address(eventManager), address(eventManagerImplementation));
-        _upgrade(
-            fomoTreasureManagerProxyAdmin, address(fomoTreasureManager), address(fomoTreasureManagerImplementation)
-        );
+//        _upgrade(yoloTokenProxyAdmin, address(yoloToken), address(yoloTokenImplementation));
+//        _upgrade(userManagerProxyAdmin, address(userManager), address(userManagerImplementation));
+//        _upgrade(
+//            fomoTreasureManagerProxyAdmin, address(fomoTreasureManager), address(fomoTreasureManagerImplementation)
+//        );
         _upgrade(cardManagerProxyAdmin, address(cardManager), address(cardManagerImplementation));
-        _upgrade(lpManagerProxyAdmin, address(lpManager), address(lpManagerImplementation));
+        // _upgrade(lpManagerProxyAdmin, address(lpManager), address(lpManagerImplementation));
 
         vm.stopBroadcast();
 
@@ -148,11 +141,6 @@ contract DeployStakingScript is InitContract {
             new TransparentUpgradeableProxy(address(emptyContract), proxyAdminOwner, emptyInitData);
         userManager = UserManager(payable(address(proxyUserManager)));
         userManagerProxyAdmin = ProxyAdmin(getProxyAdminAddress(address(proxyUserManager)));
-
-        TransparentUpgradeableProxy proxyEventManager =
-            new TransparentUpgradeableProxy(address(emptyContract), proxyAdminOwner, emptyInitData);
-        eventManager = EventManager(payable(address(proxyEventManager)));
-        eventManagerProxyAdmin = ProxyAdmin(getProxyAdminAddress(address(proxyEventManager)));
 
         TransparentUpgradeableProxy proxyFomoTreasureManager =
             new TransparentUpgradeableProxy(address(emptyContract), proxyAdminOwner, emptyInitData);
@@ -173,7 +161,6 @@ contract DeployStakingScript is InitContract {
     function _deployImplementations() internal {
         yoloTokenImplementation = new YoloToken();
         userManagerImplementation = new UserManager();
-        eventManagerImplementation = new EventManager();
         fomoTreasureManagerImplementation = new FomoTreasureManager();
         cardManagerImplementation = new CardManager();
         lpManagerImplementation = new LpManager();
@@ -203,15 +190,6 @@ contract DeployStakingScript is InitContract {
             abi.encodeCall(
                 UserManager.initialize,
                 (env.chooseMeMultiSign, env.distributeRewardAddress, address(yoloToken), env.chooseMeMultiSign2)
-            )
-        );
-        _upgradeAndCall(
-            eventManagerProxyAdmin,
-            address(eventManager),
-            address(eventManagerImplementation),
-            abi.encodeCall(
-                EventManager.initialize,
-                (env.chooseMeMultiSign, env.chooseMeMultiSign, env.usdtTokenAddress, IYoloToken(address(yoloToken)))
             )
         );
         _upgradeAndCall(
@@ -257,21 +235,18 @@ contract DeployStakingScript is InitContract {
 
         yoloToken = YoloToken(payable(addresses.proxyYoloToken));
         userManager = UserManager(payable(addresses.proxyUserManager));
-        eventManager = EventManager(payable(addresses.proxyEventManager));
         fomoTreasureManager = FomoTreasureManager(payable(addresses.proxyFomoTreasureManager));
         cardManager = CardManager(payable(addresses.proxyCardManager));
         lpManager = LpManager(payable(addresses.proxyLpManager));
 
         yoloTokenProxyAdmin = _proxyAdminOrZero(address(yoloToken));
         userManagerProxyAdmin = _proxyAdminOrZero(address(userManager));
-        eventManagerProxyAdmin = _proxyAdminOrZero(address(eventManager));
         fomoTreasureManagerProxyAdmin = _proxyAdminOrZero(address(fomoTreasureManager));
         cardManagerProxyAdmin = _proxyAdminOrZero(address(cardManager));
         lpManagerProxyAdmin = _proxyAdminOrZero(address(lpManager));
 
         _requireProxy(address(yoloToken), "YoloToken");
         _requireProxy(address(userManager), "UserManager");
-        _requireProxy(address(eventManager), "EventManager");
         _requireProxy(address(fomoTreasureManager), "FomoTreasureManager");
         _requireProxy(address(cardManager), "CardManager");
         _requireProxy(address(lpManager), "LpManager");
@@ -359,7 +334,6 @@ contract DeployStakingScript is InitContract {
         vm.serializeAddress(root, "usdtTokenAddress", usdtTokenAddress);
         vm.serializeAddress(root, "proxyYoloToken", address(yoloToken));
         vm.serializeAddress(root, "proxyUserManager", address(userManager));
-        vm.serializeAddress(root, "proxyEventManager", address(eventManager));
         vm.serializeAddress(root, "proxyFomoTreasureManager", address(fomoTreasureManager));
         vm.serializeAddress(root, "proxyCardManager", address(cardManager));
         string memory json = vm.serializeAddress(root, "proxyLpManager", address(lpManager));
@@ -385,9 +359,6 @@ contract DeployStakingScript is InitContract {
         _logContract("YoloToken", address(yoloToken), address(yoloTokenImplementation), address(yoloTokenProxyAdmin));
         _logContract(
             "UserManager", address(userManager), address(userManagerImplementation), address(userManagerProxyAdmin)
-        );
-        _logContract(
-            "EventManager", address(eventManager), address(eventManagerImplementation), address(eventManagerProxyAdmin)
         );
         _logContract(
             "FomoTreasureManager",

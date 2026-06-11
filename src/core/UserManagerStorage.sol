@@ -32,5 +32,8 @@ abstract contract UserManagerStorage is IUserManager {
     uint256 public totalStakedYolo;
     uint256 public totalRefundReserved;
 
-    uint256[100] private __gap;
+    address public USDT;
+    address public V2_ROUTER;
+
+    uint256[98] private __gap;
 }
