@@ -20,8 +20,8 @@ import {CardManager} from "../src/token/allocation/CardManager.sol";
 import {LpManager} from "../src/token/allocation/LpManager.sol";
 import {EmptyContract} from "../src/utils/EmptyContract.sol";
 
-// MODE=0 forge script script/DeployStakingScript.sol:DeployStakingScript --sig "deployAll()" --slow --multi --rpc-url <rpc> --broadcast
-// MODE=0 forge script script/DeployStakingScript.sol:DeployStakingScript --sig "upgradeAll()" --slow --multi --rpc-url <rpc> --broadcast
+// MODE=1 forge script script/DeployStakingScript.sol:DeployStakingScript --sig "deployAll()" --slow --multi --rpc-url https://shared.ap-southeast-1.getblock.io/8e87ac495a5941ae9dfb9ea6ed9ae7d2 --broadcast --verify --etherscan-api-key I4C1AKJT8J9KJVCXHZKK317T3XV8IVASRX
+// MODE=1 forge script script/DeployStakingScript.sol:DeployStakingScript --sig "upgradeAll()" --slow --multi --rpc-url https://shared.ap-southeast-1.getblock.io/8e87ac495a5941ae9dfb9ea6ed9ae7d2 --broadcast --verify --etherscan-api-key I4C1AKJT8J9KJVCXHZKK317T3XV8IVASRX
 contract DeployStakingScript is InitContract {
     struct DeployEnv {
         address deployerAddress;
@@ -116,13 +116,13 @@ contract DeployStakingScript is InitContract {
         cardManagerImplementation = new CardManager();
         lpManagerImplementation = new LpManager();
 
-//        _upgrade(yoloTokenProxyAdmin, address(yoloToken), address(yoloTokenImplementation));
-//        _upgrade(userManagerProxyAdmin, address(userManager), address(userManagerImplementation));
-//        _upgrade(
-//            fomoTreasureManagerProxyAdmin, address(fomoTreasureManager), address(fomoTreasureManagerImplementation)
-//        );
+        _upgrade(yoloTokenProxyAdmin, address(yoloToken), address(yoloTokenImplementation));
+        _upgrade(userManagerProxyAdmin, address(userManager), address(userManagerImplementation));
+        _upgrade(
+            fomoTreasureManagerProxyAdmin, address(fomoTreasureManager), address(fomoTreasureManagerImplementation)
+        );
         _upgrade(cardManagerProxyAdmin, address(cardManager), address(cardManagerImplementation));
-        // _upgrade(lpManagerProxyAdmin, address(lpManager), address(lpManagerImplementation));
+        _upgrade(lpManagerProxyAdmin, address(lpManager), address(lpManagerImplementation));
 
         vm.stopBroadcast();
 
