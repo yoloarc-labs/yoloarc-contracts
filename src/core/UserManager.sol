@@ -119,9 +119,9 @@ contract UserManager is Initializable, OwnableUpgradeable, PausableUpgradeable, 
         emit WithdrawStakingYolo(msg.sender, amount, stakedYoloBalance[msg.sender]);
     }
 
-    function releaseUsedStakingYolo(address user) external onlyCaller whenNotPaused {
+    function releaseUsedStakingYolo(address user, uint256 yoloAmount) external onlyCaller whenNotPaused {
         require(user != address(0), "UserManager: user cannot be zero address");
-        _releaseUsedStakingYolo(user);
+        _releaseUsedStakingYolo(user, yoloAmount);
     }
 
     function addRefundingAmount(address user, uint256 amount) external onlyCaller whenNotPaused {
@@ -173,10 +173,9 @@ contract UserManager is Initializable, OwnableUpgradeable, PausableUpgradeable, 
         emit BindInviter({inviter: inviter, invitee: user});
     }
 
-    function _releaseUsedStakingYolo(address user) internal {
-        uint256 releasedAmount = usedStakedYoloBalance[user];
-        require(releasedAmount > 0, "UserManager: no used staking yolo");
-        _clearUsedStakingYolo(user, releasedAmount);
+    function _releaseUsedStakingYolo(address user, uint256 yoloAmount) internal {
+        require(usedStakedYoloBalance[user] >= yoloAmount, "UserManager:_releaseUsedStakingYolo user stake balance is not enough");
+        _clearUsedStakingYolo(user, yoloAmount);
     }
 
     function _clearUsedStakingYolo(address user, uint256 releasedAmount) internal {

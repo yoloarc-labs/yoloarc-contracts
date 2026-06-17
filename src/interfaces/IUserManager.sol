@@ -16,7 +16,7 @@ interface IUserManager {
 
     function stakingAndUseYolo(address[] calldata users, uint256[] calldata stakeUsdtAmount) external;
     function withdrawStakingYolo(uint256 amount) external;
-    function releaseUsedStakingYolo(address user) external;
+    function releaseUsedStakingYolo(address user, uint256 yoloAmount) external;
     function setUsdtToken(address usdtToken) external;
     function setV2Router(address v2Router) external;
 

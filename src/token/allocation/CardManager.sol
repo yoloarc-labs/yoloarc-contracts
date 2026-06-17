@@ -27,6 +27,7 @@ contract CardManager is
 
     string private constant CARD_NAME = "YoloArc Card";
     string private constant CARD_SYMBOL = "Yolo Card";
+    uint256 private constant MIN_TRANSFERABLE_BALANCE = 16;
 
     constructor() {
         _disableInitializers();
@@ -129,7 +130,6 @@ contract CardManager is
         require(
             amount <= _tokenBalance(), "CardManager: withdraw erc20 amount more token balance in this contracts"
         );
-        fundingBalance[underlyingToken] -= amount;
 
         IERC20(underlyingToken).safeTransfer(recipient, amount);
 
@@ -243,6 +243,23 @@ contract CardManager is
         tokenId = _nextTokenId++;
         _safeMint(buyer, tokenId);
         emit CreateNFT(buyer, tokenId, nftJson);
+    }
+
+    function _update(address to, uint256 tokenId, address auth)
+        internal
+        override(ERC721Upgradeable)
+        returns (address)
+    {
+        address from = _ownerOf(tokenId);
+
+        if (from != address(0) && to != address(0)) {
+            require(
+                balanceOf(from) >= MIN_TRANSFERABLE_BALANCE,
+                "CardManager: holder must own at least 16 NFTs to transfer"
+            );
+        }
+
+        return super._update(to, tokenId, auth);
     }
 
     function _tokenBalance() internal view virtual returns (uint256) {
