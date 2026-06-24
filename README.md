@@ -1,66 +1,103 @@
-## Foundry
+# yoloarc-contracts
 
-**Foundry is a blazing fast, portable and modular toolkit for Ethereum application development written in Rust.**
+yoloarc 体育博彩业务线的链上合约仓库. 基于 Foundry (Solidity 0.8.20, EVM prague, via_ir + optimizer) 构建, 采用可升级代理 (TransparentUpgradeableProxy) 双层架构: 主代币 + 分配管理器, 由链下合约调用层统一驱动.
 
-Foundry consists of:
+## 业务背景
 
-- **Forge**: Ethereum testing framework (like Truffle, Hardhat and DappTools).
-- **Cast**: Swiss army knife for interacting with EVM smart contracts, sending transactions and getting chain data.
-- **Anvil**: Local Ethereum node, akin to Ganache, Hardhat Network.
-- **Chisel**: Fast, utilitarian, and verbose solidity REPL.
+yoloarc 是一套体育博彩产品, 分后端 / H5 / 后台 / 合约四层. 本仓库是合约层, 提供:
 
-## Documentation
+- **YOLO 代币**: 带 LP 销毁 / 下跌税阶梯 / 白名单 / Fomo 奖池机制的博彩平台代币.
+- **用户关系**: 邀请绑定 / 推荐关系, 由链下 caller (yolo-contracts-caller) 写入.
+- **分配管理器**: 卡牌分配 (CardManager) / LP 分配 (LpManager) / Fomo 奖池分发 (FomoTreasureManager).
+- **DEX 集成**: PancakeSwap V2 / V3 swap 与滑点控制.
 
-https://book.getfoundry.sh/
+## 目录结构
 
-## Usage
+```
+src/
+├── token/
+│   ├── YoloToken.sol              主代币 (销毁税/下跌税/白名单/Fomo)
+│   ├── YoloTokenStorage.sol       代币存储布局 (__gap[98] 兼容升级)
+│   └── allocation/
+│       ├── CardManager.sol        卡牌分配管理器 (可升级)
+│       ├── CardManagerStorage.sol
+│       ├── LpManager.sol          LP 分配管理器 (可升级)
+│       └── LpManagerStorage.sol
+├── core/
+│   ├── UserManager.sol            用户邀请/推荐关系 (onlyCaller)
+│   ├── UserManagerStorage.sol
+│   ├── FomoTreasureManager.sol    Fomo 奖池分发
+│   └── FomoTreasureManagerStorage.sol
+├── utils/
+│   ├── SwapHelper.sol             PancakeSwap V2/V3 swap 封装
+│   └── TradeSlippage.sol          滑点控制/价格影响防护
+└── interfaces/                    各合约接口 + PancakeSwap 接口
+    └── pancake/                   IPancakeV2/V3 Factory/Router/Pair/Pool
 
-### Build
+script/
+├── EnvContract.sol                集中管理各 proxy 地址 (ERC1967Utils)
+├── InitContract.sol               ProxyAdmin 工具
+├── DeployStakingScript.sol        主部署脚本 (TransparentUpgradeableProxy)
+└── MockERC20.sol                  测试用 USDT mock
 
-```shell
-$ forge build
+test/
+└── CardManager.t.sol              CardManager 单元测试
 ```
 
-### Test
+## 架构
 
-```shell
-$ forge test
+```
+                 ┌─────────── contractCaller (yolo-contracts-caller 链下调用层) ───────────┐
+                 │                                                                       │
+                 ▼                                                                       ▼
+  YoloToken ──► mainPair (PancakeV2) ──► SwapHelper ──► PancakeV2/V3 Router
+  (销毁税/下跌税/白名单/        │
+   Fomo 奖池/价格影响)          ├─► UserManager           (邀请绑定/推荐关系)
+                               ├─► CardManager           (卡牌分配)
+                               ├─► LpManager             (LP 分配)
+                               └─► FomoTreasureManager   (Fomo 奖池分发)
 ```
 
-### Format
+- 所有核心合约走可升级代理, 实现合约用 `Initializable` + 独立 Storage 合约分离存储布局, 以 `__gap` 数组预留升级插槽.
+- `contractCaller` 角色地址是核心业务函数的唯一合法调用方, 由 `setContractCaller` (onlyOwner) 配置, 对应链下 `yolo-contracts-caller` 服务.
+- `YoloToken` 持有 `operator` / `stakingManager` / `currencyDistributor` / `fomoTreasureAddress` / `predictionContract` / `fundingPod` 等角色地址.
+
+## 代币机制
+
+- 总量上限: `1_000_000_000 * 1e6`.
+- 卖单手续费: 300 bps.
+- 下跌税阶梯 (按价格跌幅触发): 跌幅 >= 3% (300 bps) 触发 1000 bps 税, 跌幅 >= 6% (600 bps) 触发 2000 bps 税.
+- 白名单 (`whiteList`) 地址免手续费.
+- `slippageLock` 防重入, `_lpBurnedTokens` 累计 LP 销毁, `userCost` 记录用户成本.
+
+## 构建 / 测试 / 部署
 
 ```shell
-$ forge fmt
+forge build                                              # 构建 (via_ir 规避 stack too deep)
+forge test                                               # 全部测试
+forge test --match-test <TestName> -vvv                  # 单测 + trace
+forge snapshot                                           # Gas 快照
+forge fmt                                                # 格式化
+forge script script/DeployStakingScript.sol:DeployStakingScript --rpc-url <rpc> --private-key <key>
 ```
 
-### Gas Snapshots
+## 依赖
 
-```shell
-$ forge snapshot
-```
+通过 git submodule 管理 (见 `.gitmodules`):
 
-### Anvil
+- `forge-std` - Foundry 标准库
+- `openzeppelin-contracts` / `openzeppelin-contracts-upgradeable` - OpenZeppelin 合约 (含可升级版本)
+- `pancake-swap-core` / `pancake-swap-periphery` - PancakeSwap V2 核心与外设
+- `openzeppelin-foundry-upgrades` - Foundry 升级工具 (remappings 引用)
+- `solmate` - solmate 工具库 (remappings 引用)
 
-```shell
-$ anvil
-```
+克隆后需初始化子模块: `git submodule update --init --recursive`.
 
-### Deploy
+## 相关仓库
 
-```shell
-$ forge script script/Counter.s.sol:CounterScript --rpc-url <your_rpc_url> --private-key <your_private_key>
-```
+本仓库是 `dapplink-external` 组织下 yoloarc 业务线的一部分, 与以下仓库协作:
 
-### Cast
-
-```shell
-$ cast <subcommand>
-```
-
-### Help
-
-```shell
-$ forge --help
-$ anvil --help
-$ cast --help
-```
+- `yoloarc-services` - 体育博彩后端 (Go)
+- `yoloarc-dapp` - 体育博彩 H5 (Vite + Vue + wagmi)
+- `yoloarc-admin` - 体育博彩后台 (Vue3 + Element Plus)
+- `yolo-contracts-caller` - 合约调用服务 (Go, 通过 contractCaller 地址驱动本合约)
