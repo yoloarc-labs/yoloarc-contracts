@@ -101,6 +101,35 @@ contract MarkingTest is Test {
 
         // 8. 授予 stakeCaller 代卖权限
         marking.grantRole(marking.STAKE_ROLE(), stakeCaller);
+
+        // 9. lpHolder 加白名单 (价格控制测试需用 lpHolder 买卖操纵池价)
+        address[] memory wl2 = new address[](1);
+        wl2[0] = lpHolder;
+        yolo.addWhitelist(wl2);
+    }
+
+    // ==================== 价格操纵辅助 (供价格控制测试) ====================
+
+    /// @dev lpHolder 用 USDT 买 YOLO, 抬高池价
+    function _pumpPrice(uint256 usdtIn) internal {
+        vm.startPrank(lpHolder);
+        usdt.approve(ROUTER, type(uint256).max);
+        address[] memory p = new address[](2);
+        p[0] = USDT_ADDR;
+        p[1] = address(yolo);
+        router.swapExactTokensForTokensSupportingFeeOnTransferTokens(usdtIn, 0, p, lpHolder, block.timestamp + 300);
+        vm.stopPrank();
+    }
+
+    /// @dev lpHolder 卖 YOLO 换 USDT, 压低池价
+    function _dumpPrice(uint256 yoloIn) internal {
+        vm.startPrank(lpHolder);
+        yolo.approve(ROUTER, type(uint256).max);
+        address[] memory p = new address[](2);
+        p[0] = address(yolo);
+        p[1] = USDT_ADDR;
+        router.swapExactTokensForTokensSupportingFeeOnTransferTokens(yoloIn, 0, p, lpHolder, block.timestamp + 300);
+        vm.stopPrank();
     }
 
     // ==================== recycle 回流测试 ====================
@@ -257,6 +286,118 @@ contract MarkingTest is Test {
         // marking 合约应累积到 USDT
         assertGt(markingUsdtAfter, markingUsdtBefore, "marking must accumulate USDT");
         console.log(unicode"  [结果]: 通过");
+    }
+
+    // ==================== 价格控制做市 (控制涨跌幅) 测试 ====================
+
+    function testSetMarketControlPrice() public {
+        uint256 p = marking.price();
+        marking.setMarketControlPrice(p);
+        assertEq(marking.marketControlPrice(), p, "baseline should be set");
+    }
+
+    function testSetMarketControlPrice_RevertNotAdmin() public {
+        vm.prank(lpHolder);
+        vm.expectRevert();
+        marking.setMarketControlPrice(1e15);
+    }
+
+    function testMarketControlStatus() public {
+        uint256 p = marking.price();
+        marking.setMarketControlPrice(p);
+        (uint256 base, uint256 cur, uint256 upper, uint256 lower) = marking.marketControlStatus();
+        assertEq(base, p, "baseline");
+        assertEq(cur, p, "current ~= baseline");
+        assertEq(upper, p + (p * 200) / 10000, "upper = baseline+2%");
+        assertEq(lower, p - (p * 200) / 10000, "lower = baseline-2%");
+    }
+
+    function testExecuteMarketControl_NoopInBand() public {
+        console.log(unicode"=== 价格控制: 区间内不操作 ===");
+        uint256 p = marking.price();
+        marking.setMarketControlPrice(p); // 基准=当前, 在区间内
+        uint256 markingYolo = yolo.balanceOf(address(marking));
+        uint256 markingUsdt = usdt.balanceOf(address(marking));
+
+        marking.executeMarketControl();
+
+        assertEq(yolo.balanceOf(address(marking)), markingYolo, "yolo unchanged in band");
+        assertEq(usdt.balanceOf(address(marking)), markingUsdt, "usdt unchanged in band");
+        console.log(unicode"  [结果]: 通过");
+    }
+
+    function testExecuteMarketControl_SellWhenHigh() public {
+        console.log(unicode"=== 价格控制: 价格偏高 -> 卖出压价 ===");
+        uint256 baseline = marking.price();
+        marking.setMarketControlPrice(baseline);
+
+        // 抬高池价 (lpHolder 买 YOLO), 让价格突破 基准+2%
+        _pumpPrice(100 ether);
+        uint256 priceAfterPump = marking.price();
+        assertGt(priceAfterPump, baseline + (baseline * 200) / 10000, "price must be above upper band");
+
+        uint256 markingYoloBefore = yolo.balanceOf(address(marking));
+        marking.executeMarketControl();
+        uint256 markingYoloAfter = yolo.balanceOf(address(marking));
+        uint256 priceAfterControl = marking.price();
+
+        console.log(string.concat(unicode"  [基准]: ", _fmt(baseline, 18, unicode"USDT/YOLO")));
+        console.log(string.concat(unicode"  [拉升后]: ", _fmt(priceAfterPump, 18, unicode"USDT/YOLO")));
+        console.log(string.concat(unicode"  [控制后]: ", _fmt(priceAfterControl, 18, unicode"USDT/YOLO")));
+        console.log(string.concat(unicode"  [marking 卖出 YOLO]: ", _fmt(markingYoloBefore - markingYoloAfter, 6, unicode"个")));
+
+        // marking 卖出了 YOLO
+        assertLt(markingYoloAfter, markingYoloBefore, "marking should sell YOLO");
+        // 价格被压回 (低于拉升后)
+        assertLt(priceAfterControl, priceAfterPump, "price should be pushed down");
+        console.log(unicode"  [结果]: 通过");
+    }
+
+    function testExecuteMarketControl_BuyWhenLow() public {
+        console.log(unicode"=== 价格控制: 价格偏低 -> 买入托价 ===");
+        // 给 marking 注入 USDT (托价买入弹药)
+        vm.prank(USDT_WHALE);
+        usdt.transfer(address(marking), 1000 ether);
+
+        uint256 baseline = marking.price();
+        marking.setMarketControlPrice(baseline);
+
+        // 压低池价 (lpHolder 卖 YOLO), 让价格跌破 基准-2%
+        _dumpPrice(200_000 * 1e6);
+        uint256 priceAfterDump = marking.price();
+        assertLt(priceAfterDump, baseline - (baseline * 200) / 10000, "price must be below lower band");
+
+        uint256 markingUsdtBefore = usdt.balanceOf(address(marking));
+        uint256 markingYoloBefore = yolo.balanceOf(address(marking));
+        marking.executeMarketControl();
+        uint256 markingUsdtAfter = usdt.balanceOf(address(marking));
+        uint256 markingYoloAfter = yolo.balanceOf(address(marking));
+        uint256 priceAfterControl = marking.price();
+
+        console.log(string.concat(unicode"  [基准]: ", _fmt(baseline, 18, unicode"USDT/YOLO")));
+        console.log(string.concat(unicode"  [砸盘后]: ", _fmt(priceAfterDump, 18, unicode"USDT/YOLO")));
+        console.log(string.concat(unicode"  [控制后]: ", _fmt(priceAfterControl, 18, unicode"USDT/YOLO")));
+        console.log(string.concat(unicode"  [marking 花费 USDT]: ", _fmt(markingUsdtBefore - markingUsdtAfter, 18, unicode"USDT")));
+        console.log(string.concat(unicode"  [marking 买入 YOLO]: ", _fmt(markingYoloAfter - markingYoloBefore, 6, unicode"个")));
+
+        // marking 花了 USDT 买回 YOLO
+        assertLt(markingUsdtAfter, markingUsdtBefore, "marking should spend USDT");
+        assertGt(markingYoloAfter, markingYoloBefore, "marking should gain YOLO");
+        // 价格被托回 (高于砸盘后)
+        assertGt(priceAfterControl, priceAfterDump, "price should be pushed up");
+        console.log(unicode"  [结果]: 通过");
+    }
+
+    function testExecuteMarketControl_DisabledWhenBaselineZero() public {
+        // marketControlPrice 默认 0, 价格控制关闭, 不操作
+        uint256 markingYolo = yolo.balanceOf(address(marking));
+        marking.executeMarketControl();
+        assertEq(yolo.balanceOf(address(marking)), markingYolo, "no action when baseline 0");
+    }
+
+    function testCalcAmounts_ZeroWhenBaselineZero() public {
+        assertEq(marking.calculateSellAmount(), 0, "sell amount 0 when no baseline");
+        assertEq(marking.calculateBuyAmount(), 0, "buy amount 0 when no baseline");
     }
 
     // ==================== adminWithdraw 提现测试 ====================

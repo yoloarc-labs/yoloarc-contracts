@@ -31,6 +31,20 @@ contract Marking is Initializable, AccessControlUpgradeable {
     /// @notice 每个金额级别最大轮数
     uint256 public constant MAX_ROUNDS_PER_LEVEL = 100;
 
+    // ===== 价格控制做市 (控制涨跌幅, 参考 D3xai.executeMarketControl) =====
+    /// @notice YOLO 精度因子 (1 token = 1e6 raw), 价格归一化用; D3xai 用 1e18 因其代币 18 位, YoloToken 6 位故用 1e6
+    uint256 private constant TOKEN_UNIT = 1e6;
+    /// @notice 价格控制容差 2% (200 bps), 价格偏离基准 ±2% 外才触发买卖拉回
+    uint256 public constant CONTROL_TOLERANCE_BPS = 200;
+    /// @notice PancakeSwap V2 swap 手续费 0.25% (因子 9975/10000), 反推买卖量时补偿; 注意不是 Uniswap V2 的 0.3% (997/1000)
+    uint256 private constant SWAP_FEE_NUMERATOR = 9975;
+    uint256 private constant SWAP_FEE_DENOMINATOR = 10_000;
+    /// @notice 价格控制 swap 的滑点容忍 10% (防三明治/MEV, amountOutMin 下限)
+    uint256 private constant CONTROL_SLIPPAGE_BPS = 1000;
+
+    /// @notice 价格控制基准价 (USDT raw / 1 YOLO, 即 price() 同单位), admin 设置; 0 = 关闭价格控制
+    uint256 public marketControlPrice;
+
     // 本地重入锁 (该 OZ-upgradeable 版本未提供 ReentrancyGuardUpgradeable, 内嵌实现; 默认 0 = 未进入)
     uint256 private _reentryStatus; // 0 = 未进入, 1 = 已进入
     uint256 private constant _ENTERED = 1;
@@ -99,10 +113,14 @@ contract Marking is Initializable, AccessControlUpgradeable {
         pancakeRouter = IPancakeRouter02(_router);
         pair = IPancakePair(_pair);
 
-        // 授权 router 可花本合约的 YOLO (做市卖出用)
+        // 授权 router 可花本合约的 YOLO (卖出/掏池) 和 USDT (价格控制买入托价)
         require(
             IERC20(_yoloToken).approve(address(pancakeRouter), type(uint256).max),
             "Marking: yolo approve failed"
+        );
+        require(
+            IERC20(_usdtToken).approve(address(pancakeRouter), type(uint256).max),
+            "Marking: usdt approve failed"
         );
     }
 
@@ -181,6 +199,128 @@ contract Marking is Initializable, AccessControlUpgradeable {
         }
     }
 
+    // ==================== 价格控制做市 (控制涨跌幅) ====================
+
+    /**
+     * @notice 设置价格控制基准价 (USDT raw / 1 YOLO, 与 price() 同单位); 设 0 关闭价格控制
+     * @param _price 基准价, 0 关闭
+     */
+    function setMarketControlPrice(uint256 _price) public onlyRole(DEFAULT_ADMIN_ROLE) {
+        marketControlPrice = _price;
+    }
+
+    /**
+     * @notice 当前池价 (换出 1 YOLO 得到的 USDT raw), 与 marketControlPrice 同单位
+     */
+    function price() public view configured returns (uint256) {
+        address[] memory path = new address[](2);
+        path[0] = address(yoloToken);
+        path[1] = address(usdtToken);
+        try pancakeRouter.getAmountsOut(TOKEN_UNIT, path) returns (uint256[] memory amounts) {
+            return amounts[1];
+        } catch {
+            revert("Marking: price error");
+        }
+    }
+
+    /**
+     * @notice keeper 触发价格控制: 价格偏离基准 ±2% 时, 卖出/买入把价格拉回基准
+     * @dev 高于基准+2% -> 卖 YOLO 压价; 低于基准-2% -> 用 USDT 买 YOLO 托价; 区间内不动
+     */
+    function executeMarketControl() public configured onlyEnable nonReentrant {
+        uint256 baseline = marketControlPrice;
+        if (baseline == 0) {
+            return;
+        }
+        // 池子单边空时 getAmountsOut 会失败, 先优雅返回 (不 revert)
+        (uint256 rY, uint256 rU) = _reserves();
+        if (rY == 0 || rU == 0) {
+            return;
+        }
+        uint256 current = price();
+        uint256 tolerance = (baseline * CONTROL_TOLERANCE_BPS) / BPS_DENOMINATOR;
+        uint256 upper = baseline + tolerance;
+
+        if (current > upper) {
+            // 价格偏高: 卖 YOLO 把价格压回基准
+            uint256 sellAmount = calculateSellAmount();
+            if (sellAmount > 0 && IERC20(address(yoloToken)).balanceOf(address(this)) >= sellAmount) {
+                _swapYoloForUsdt(sellAmount);
+            }
+            return;
+        }
+
+        uint256 lower = baseline > tolerance ? baseline - tolerance : 0;
+        if (current < lower) {
+            // 价格偏低: 用 USDT 买 YOLO 把价格托回基准
+            uint256 buyAmount = calculateBuyAmount();
+            uint256 usdtBal = usdtToken.balanceOf(address(this));
+            if (buyAmount > 0 && usdtBal > 0) {
+                _swapUsdtForYolo(usdtBal >= buyAmount ? buyAmount : usdtBal);
+            }
+        }
+    }
+
+    /**
+     * @notice 查询价格控制状态 (供 keeper 判断是否需要触发)
+     * @return baseline 基准价
+     * @return current 当前价
+     * @return upper 触发卖出上限 (基准+2%)
+     * @return lower 触发买入下限 (基准-2%)
+     */
+    function marketControlStatus()
+        public
+        view
+        returns (uint256 baseline, uint256 current, uint256 upper, uint256 lower)
+    {
+        baseline = marketControlPrice;
+        if (baseline == 0) {
+            return (0, 0, 0, 0);
+        }
+        current = price();
+        uint256 tolerance = (baseline * CONTROL_TOLERANCE_BPS) / BPS_DENOMINATOR;
+        upper = baseline + tolerance;
+        lower = baseline > tolerance ? baseline - tolerance : 0;
+    }
+
+    /**
+     * @notice 计算价格偏高时需要卖出的 YOLO 数量 (恒定乘积反推, 含 0.3% 手续费补偿, 6 位精度归一化)
+     * @dev 目标: 卖出后池价回到 marketControlPrice. rY_target = sqrt(k * TOKEN_UNIT / baseline)
+     */
+    function calculateSellAmount() public view returns (uint256) {
+        (uint256 rY, uint256 rU) = _reserves();
+        uint256 baseline = marketControlPrice;
+        if (rY == 0 || rU == 0 || baseline == 0) {
+            return 0;
+        }
+        uint256 k = rY * rU;
+        uint256 targetRY = _sqrt((k * TOKEN_UNIT) / baseline);
+        if (targetRY <= rY) {
+            return 0;
+        }
+        uint256 deltaAfterFee = targetRY - rY;
+        return (deltaAfterFee * SWAP_FEE_DENOMINATOR) / SWAP_FEE_NUMERATOR;
+    }
+
+    /**
+     * @notice 计算价格偏低时需要付出的 USDT 数量 (恒定乘积反推, 含 0.3% 手续费补偿)
+     * @dev 目标: 买入后池价回到 marketControlPrice. rU_target = sqrt(k * baseline / TOKEN_UNIT)
+     */
+    function calculateBuyAmount() public view returns (uint256) {
+        (uint256 rY, uint256 rU) = _reserves();
+        uint256 baseline = marketControlPrice;
+        if (rY == 0 || rU == 0 || baseline == 0) {
+            return 0;
+        }
+        uint256 k = rY * rU;
+        uint256 targetRU = _sqrt((k * baseline) / TOKEN_UNIT);
+        if (targetRU <= rU) {
+            return 0;
+        }
+        uint256 deltaAfterFee = targetRU - rU;
+        return (deltaAfterFee * SWAP_FEE_DENOMINATOR) / SWAP_FEE_NUMERATOR;
+    }
+
     /**
      * @notice 管理员提取本合约持有的 USDT
      * @param _to 接收地址
@@ -225,5 +365,67 @@ contract Marking is Initializable, AccessControlUpgradeable {
 
         // 回收卖进池子的代币 (单次上限池子余额 1/3)
         yoloToken.recycle(_amountIn);
+    }
+
+    /**
+     * @dev 读取池子储备, 返回 (本代币储备 rY, USDT 储备 rU), 自动处理 token0/token1 顺序
+     */
+    function _reserves() internal view returns (uint256 rY, uint256 rU) {
+        (uint256 r0, uint256 r1,) = IPancakePair(pair).getReserves();
+        address token0 = IPancakePair(pair).token0();
+        if (token0 == address(yoloToken)) {
+            rY = r0;
+            rU = r1;
+        } else {
+            rY = r1;
+            rU = r0;
+        }
+    }
+
+    /**
+     * @dev 价格控制: 卖 YOLO 换 USDT 到本合约 (压低池价), amountOutMin 留 10% 滑点防 MEV
+     */
+    function _swapYoloForUsdt(uint256 _amountIn) internal {
+        address[] memory path = new address[](2);
+        path[0] = address(yoloToken);
+        path[1] = address(usdtToken);
+        uint256 minOut = _minOut(_amountIn, path);
+        pancakeRouter.swapExactTokensForTokensSupportingFeeOnTransferTokens(
+            _amountIn, minOut, path, address(this), block.timestamp + 300
+        );
+    }
+
+    /**
+     * @dev 价格控制: 用 USDT 买 YOLO 到本合约 (抬高池价), amountOutMin 留 10% 滑点防 MEV
+     */
+    function _swapUsdtForYolo(uint256 _usdtIn) internal {
+        address[] memory path = new address[](2);
+        path[0] = address(usdtToken);
+        path[1] = address(yoloToken);
+        uint256 minOut = _minOut(_usdtIn, path);
+        pancakeRouter.swapExactTokensForTokensSupportingFeeOnTransferTokens(
+            _usdtIn, minOut, path, address(this), block.timestamp + 300
+        );
+    }
+
+    /**
+     * @dev 按 getAmountsOut 预期输出扣 10% 滑点, 作为 swap 的 amountOutMin 下限 (防三明治)
+     */
+    function _minOut(uint256 _amountIn, address[] memory _path) internal view returns (uint256) {
+        uint256[] memory out = pancakeRouter.getAmountsOut(_amountIn, _path);
+        return (out[out.length - 1] * (BPS_DENOMINATOR - CONTROL_SLIPPAGE_BPS)) / BPS_DENOMINATOR;
+    }
+
+    /**
+     * @dev 平方根 (Babylonian 法)
+     */
+    function _sqrt(uint256 x) internal pure returns (uint256 y) {
+        if (x == 0) return 0;
+        uint256 z = (x + 1) / 2;
+        y = x;
+        while (z < y) {
+            y = z;
+            z = (x / z + z) / 2;
+        }
     }
 }
