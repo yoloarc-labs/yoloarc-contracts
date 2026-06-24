@@ -245,22 +245,22 @@ contract CardManager is
         emit CreateNFT(buyer, tokenId, nftJson);
     }
 
-    function _update(address to, uint256 tokenId, address auth)
-        internal
-        override(ERC721Upgradeable)
-        returns (address)
-    {
-        address from = _ownerOf(tokenId);
-
-        if (from != address(0) && to != address(0)) {
-            require(
-                balanceOf(from) >= MIN_TRANSFERABLE_BALANCE,
-                "CardManager: holder must own at least 16 NFTs to transfer"
-            );
-        }
-
-        return super._update(to, tokenId, auth);
-    }
+//    function _update(address to, uint256 tokenId, address auth)
+//        internal
+//        override(ERC721Upgradeable)
+//        returns (address)
+//    {
+//        address from = _ownerOf(tokenId);
+//
+//        if (from != address(0) && to != address(0)) {
+//            require(
+//                balanceOf(from) >= MIN_TRANSFERABLE_BALANCE,
+//                "CardManager: holder must own at least 16 NFTs to transfer"
+//            );
+//        }
+//
+//        return super._update(to, tokenId, auth);
+//    }
 
     function _tokenBalance() internal view virtual returns (uint256) {
         return IERC20(underlyingToken).balanceOf(address(this));

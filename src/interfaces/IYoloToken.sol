@@ -10,6 +10,7 @@ interface IYoloToken {
 
     event Burn(uint256 _burnAmount, uint256 _totalSupply);
     event SetStakingManager(address indexed stakingManager);
+    event SetMarketAddress(address indexed marketCallerAddress, address marketAddress);
     event SetPoolAddress(YoloPool pool);
     event SetPlatformAddress(address indexed platformAddress);
     event UpdateChoPrice(uint256 timestamp, uint256 blockNumber, uint256 choPrice);

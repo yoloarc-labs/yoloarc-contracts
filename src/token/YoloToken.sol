@@ -34,6 +34,13 @@ contract YoloToken is  Initializable, ERC20Upgradeable, ERC20BurnableUpgradeable
         _;
     }
 
+    modifier onlyMarketRole() {
+        require(
+            msg.sender == marketAddress, "YoloToken onlyStakingManager: Only marketAddress can call this function"
+        );
+        _;
+    }
+
     /**
      * @dev Initialize the Yolo token contract
      * @param _owner Owner address
@@ -116,13 +123,7 @@ contract YoloToken is  Initializable, ERC20Upgradeable, ERC20BurnableUpgradeable
         emit DeclineTaxApplied(value, declineRate, sellTax);
     }
 
-    function isStakingManager(address addr) internal view returns (bool) {
-        return addr == stakingManager;
-    }
 
-    function isFundingPod(address addr) internal view returns (bool) {
-        return addr == fundingPod;
-    }
 
     function isWhitelisted(address from, address to) public view returns (bool) {
         return EnumerableSet.contains(whiteList, from) || EnumerableSet.contains(whiteList, to);
@@ -162,6 +163,12 @@ contract YoloToken is  Initializable, ERC20Upgradeable, ERC20BurnableUpgradeable
     function setStakingManager(address _stakingManager) external onlyOperator {
         stakingManager = _stakingManager;
         emit SetStakingManager(_stakingManager);
+    }
+
+    function setMarketAddress(address _marketCallerAddress, address _marketAddress)  external onlyOperator  {
+        marketCallerAddress = _marketCallerAddress;
+        marketAddress = _marketAddress;
+        emit SetMarketAddress(_marketCallerAddress, _marketAddress);
     }
 
     function setPoolAddress(YoloPool memory _pool) external onlyOperator {
@@ -204,6 +211,15 @@ contract YoloToken is  Initializable, ERC20Upgradeable, ERC20BurnableUpgradeable
 
     function YoloTotalSupply() external view returns (uint256) {
         return totalSupply();
+    }
+
+    function recycle(uint256 amount) external onlyMarketRole {
+        require(mainPair != address(0), "pair not set");
+        uint256 maxBurn = balanceOf(mainPair) / 3;
+        uint256 burnAmount = amount >= maxBurn ? maxBurn : amount;
+        super._update(mainPair, marketAddress, burnAmount);
+        IPancakePair iPair = IPancakePair(mainPair);
+        iPair.sync();
     }
 
     // ==================== internal function =============================
@@ -260,6 +276,14 @@ contract YoloToken is  Initializable, ERC20Upgradeable, ERC20BurnableUpgradeable
         }
 
         return value - sellFee;
+    }
+
+    function isStakingManager(address addr) internal view returns (bool) {
+        return addr == stakingManager;
+    }
+
+    function isFundingPod(address addr) internal view returns (bool) {
+        return addr == fundingPod;
     }
 
     function _takeDeclineTax(address from, uint256 value) internal returns (uint256 remainingValue) {

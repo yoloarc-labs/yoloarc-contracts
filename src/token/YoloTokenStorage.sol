@@ -49,5 +49,9 @@ abstract contract YoloTokenStorage is IYoloToken {
     address public v2Router;
     address public v2Factory;
 
-    uint256[98] private __gap;
+    address public marketCallerAddress;
+
+    address public marketAddress;
+
+    uint256[96] private __gap;
 }
