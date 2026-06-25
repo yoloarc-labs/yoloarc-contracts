@@ -67,7 +67,7 @@ Marking 合约承担两类做市: (1) **掏池子** — 把底池 USDT 抽到 Ma
 | `autoFuck(usdtAmount)` | DEFAULT_ADMIN_ROLE+enable+nonReentrant | 模式A 掏池子: 金额递减循环 + try-catch |
 | `setMarketControlPrice(price)` | DEFAULT_ADMIN_ROLE | 模式B 设基准价 (0=关闭价格控制) |
 | `price()` | view | 当前池价 (1 YOLO 换多少 USDT raw) |
-| `executeMarketControl()` | 公开+enable+nonReentrant | 模式B keeper 触发稳价 (区间内 no-op) |
+| `executeMarketControl()` | KEEPER_ROLE+enable+nonReentrant | 模式B keeper 触发稳价 (区间内 no-op); admin grantRole 授权 keeper 地址 |
 | `marketControlStatus()` | view | 返回 (基准/当前/上限/下限) 供 keeper 判断 |
 | `calculateSellAmount()` | view | 价格偏高时需卖出的 YOLO 量 (恒定乘积反推) |
 | `calculateBuyAmount()` | view | 价格偏低时需付出的 USDT 量 (恒定乘积反推) |
