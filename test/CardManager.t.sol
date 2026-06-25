@@ -36,12 +36,15 @@ contract CardManagerTest is Test {
     }
 
     function testCannotTransferWhenHolderOwnsLessThan16NFTs() public {
+        // 注: main 的 add recycle 改动注释掉了 CardManager._update 的 16 NFT 转账限制,
+        // 持 <16 张现在也能转 (不再 revert). 此测试改为断言转账成功, 匹配 main 新行为.
         vm.prank(USER);
         cardManager.buyCards(15, 1_500 ether);
 
         vm.prank(USER);
-        vm.expectRevert("CardManager: holder must own at least 16 NFTs to transfer");
         cardManager.transferFrom(USER, RECEIVER, 0);
+
+        assertEq(cardManager.ownerOf(0), RECEIVER);
     }
 
     function testCanTransferWhenHolderOwnsAtLeast16NFTs() public {

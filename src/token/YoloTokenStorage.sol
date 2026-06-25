@@ -49,9 +49,8 @@ abstract contract YoloTokenStorage is IYoloToken {
     address public v2Router;
     address public v2Factory;
 
-    address public marketCallerAddress;
+    /// @notice 做市合约地址, 持有 recycle 权限
+    address public marking;
 
-    address public marketAddress;
-
-    uint256[96] private __gap;
+    uint256[97] private __gap;
 }

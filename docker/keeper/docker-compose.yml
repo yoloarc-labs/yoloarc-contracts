@@ -1,0 +1,20 @@
+# Marking keeper 一键部署
+# 用法:
+#   1. 复制 env.example -> .env, 填 MARKING_ADDRESS / PRIVATE_KEY
+#   2. 在 Marking 上给 keeper 地址授 KEEPER_ROLE:
+#        cast send <Marking> "grantRole(bytes32,address)" <KEEPER_ROLE> <keeper地址> --rpc-url <rpc> --private-key <admin>
+#      KEEPER_ROLE = cast keccak "KEEPER_ROLE"
+#   3. docker compose up -d
+# 服务器部署同理; .env 只在本机/服务器, 不提交, 不进镜像
+services:
+  marking-keeper:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: yoloarc-marking-keeper:latest
+    container_name: marking-keeper
+    restart: unless-stopped
+    env_file:
+      - .env
+    # ARM 主机 (Apple Silicon) 取消下面注释
+    # platform: linux/amd64
