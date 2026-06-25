@@ -78,16 +78,34 @@ contract UserManager is Initializable, OwnableUpgradeable, PausableUpgradeable, 
         require(users.length == stakeUsdtAmount.length, "UserManager: users and amounts length mismatch");
         require(users.length > 0, "UserManager: empty staking params");
 
+        uint256 totalUsdtAmount;
+
+        for (uint256 i = 0; i < users.length; i++) {
+            require(users[i] != address(0), "UserManager: user cannot be zero address");
+            require(stakeUsdtAmount[i] > 0, "UserManager: amount is zero");
+            totalUsdtAmount += stakeUsdtAmount[i];
+        }
+
+        require(
+            IERC20(USDT).allowance(msg.sender, address(this)) >= totalUsdtAmount,
+            "UserManager: insufficient USDT allowance"
+        );
+
+        require(
+            IERC20(USDT).balanceOf(msg.sender) >= totalUsdtAmount,
+            "UserManager: insufficient USDT balance"
+        );
+
+        IERC20(USDT).safeTransferFrom(msg.sender, address(this), totalUsdtAmount);
+
         for (uint256 i = 0; i < users.length; i++) {
             address stakingUser = users[i];
             uint256 usdtAmount = stakeUsdtAmount[i];
-            require(stakingUser != address(0), "UserManager: user cannot be zero address");
-            require(usdtAmount > 0, "UserManager: amount is zero");
 
             _processUnlockedStakeLots(stakingUser);
 
-            IERC20(USDT).safeTransferFrom(msg.sender, address(this), usdtAmount);
             uint256 yoloReceived = SwapHelper.swapV2(V2_ROUTER, USDT, yoloToken, usdtAmount, 0, address(this));
+
             require(yoloReceived > 0, "No tokens received from swap");
 
             stakedYoloBalance[stakingUser] += yoloReceived;
@@ -96,9 +114,20 @@ contract UserManager is Initializable, OwnableUpgradeable, PausableUpgradeable, 
 
             uint256 unlockAt = block.timestamp + RELEASE_DELAY;
             stakingReleaseAt[stakingUser] = unlockAt;
-            stakeLots[stakingUser].push(StakeLot({amount: yoloReceived, unlockAt: unlockAt}));
+            stakeLots[stakingUser].push(
+                StakeLot({
+                    amount: yoloReceived,
+                    unlockAt: unlockAt
+                })
+            );
 
-            emit StakingYolo(stakingUser, usdtAmount, yoloReceived, stakedYoloBalance[stakingUser], unlockAt);
+            emit StakingYolo(
+                stakingUser,
+                usdtAmount,
+                yoloReceived,
+                stakedYoloBalance[stakingUser],
+                unlockAt
+            );
         }
     }
 
@@ -141,11 +170,16 @@ contract UserManager is Initializable, OwnableUpgradeable, PausableUpgradeable, 
     }
 
     function updateUserTradingVolume(address user, uint256 amount) external onlyCaller whenNotPaused {
-        require(user != address(0), "UserManager: user cannot be zero address");
-        require(amount > 0, "UserManager: amount is zero");
+        _updateUserTradingVolume(user, amount);
+    }
 
-        userTradingVolume[user] += amount;
-        emit UpdateUserTradingVolume(user, amount, userTradingVolume[user]);
+    function updateUserTradingVolume(address[] calldata users, uint256[] calldata amounts) external onlyCaller whenNotPaused {
+        require(users.length == amounts.length, "UserManager: users and amounts length mismatch");
+        require(users.length > 0, "UserManager: empty trading volume params");
+
+        for (uint256 i = 0; i < users.length; i++) {
+            _updateUserTradingVolume(users[i], amounts[i]);
+        }
     }
 
     function claimRefundingAmount(uint256 amount) external nonReentrant whenNotPaused {
@@ -174,14 +208,16 @@ contract UserManager is Initializable, OwnableUpgradeable, PausableUpgradeable, 
     }
 
     function _releaseUsedStakingYolo(address user, uint256 yoloAmount) internal {
-        require(usedStakedYoloBalance[user] >= yoloAmount, "UserManager:_releaseUsedStakingYolo user stake balance is not enough");
-        _clearUsedStakingYolo(user, yoloAmount);
+        unlockedStakedYoloBalance[user] += yoloAmount;
+        emit ReleaseStakingYolo(user, yoloAmount);
     }
 
-    function _clearUsedStakingYolo(address user, uint256 releasedAmount) internal {
-        usedStakedYoloBalance[user] = 0;
-        unlockedStakedYoloBalance[user] += releasedAmount;
-        emit ReleaseStakingYolo(user, releasedAmount);
+    function _updateUserTradingVolume(address user, uint256 amount) internal {
+        require(user != address(0), "UserManager: user cannot be zero address");
+        require(amount > 0, "UserManager: amount is zero");
+
+        userTradingVolume[user] += amount;
+        emit UpdateUserTradingVolume(user, amount, userTradingVolume[user]);
     }
 
     function _processUnlockedStakeLots(address user) internal {
