@@ -22,6 +22,10 @@ contract Marking is Initializable, AccessControlUpgradeable {
     /// @notice 质押/上层业务权限, 可调用 getUsdtTokenAmount 代卖
     bytes32 public constant STAKE_ROLE = keccak256("STAKE_ROLE");
 
+    /// @notice 做市 keeper 专用角色, 可调用 executeMarketControl 触发价格控制
+    /// @dev 最小权限: keeper 只能触发稳价 swap (资金留在本合约), 不能提现/掏池; 私钥泄露也限于此权限
+    bytes32 public constant KEEPER_ROLE = keccak256("KEEPER_ROLE");
+
     /// @notice 卖出滑点 + 手续费缓冲 (106% = 5% 滑点 + 1% 余量)
     uint256 private constant SWAP_BUFFER_BPS = 10_600;
     uint256 private constant BPS_DENOMINATOR = 10_000;
@@ -224,42 +228,57 @@ contract Marking is Initializable, AccessControlUpgradeable {
     }
 
     /**
-     * @notice keeper 触发价格控制: 价格偏离基准 ±2% 时, 卖出/买入把价格拉回基准
+     * @notice keeper (KEEPER_ROLE) 触发价格控制: 价格偏离基准 ±2% 时, 卖出/买入把价格拉回基准
      * @dev 高于基准+2% -> 卖 YOLO 压价; 低于基准-2% -> 用 USDT 买 YOLO 托价; 区间内不动
+     *      仅 KEEPER_ROLE 可调 (admin 用 grantRole 授权 keeper 地址); 资金始终留本合约, 无提现权
      */
-    function executeMarketControl() public configured onlyEnable nonReentrant {
+    function executeMarketControl() public configured onlyEnable onlyRole(KEEPER_ROLE) nonReentrant {
         uint256 baseline = marketControlPrice;
-        if (baseline == 0) {
-            return;
-        }
-        // 池子单边空时 getAmountsOut 会失败, 先优雅返回 (不 revert)
+        require(baseline != 0, "Marking: marketControlPrice not set (control disabled)");
+
         (uint256 rY, uint256 rU) = _reserves();
-        if (rY == 0 || rU == 0) {
-            return;
-        }
+        require(rY != 0 && rU != 0, "Marking: pair reserves empty");
+
         uint256 current = price();
         uint256 tolerance = (baseline * CONTROL_TOLERANCE_BPS) / BPS_DENOMINATOR;
         uint256 upper = baseline + tolerance;
+        uint256 lower = baseline > tolerance ? baseline - tolerance : 0;
 
         if (current > upper) {
             // 价格偏高: 卖 YOLO 把价格压回基准
             uint256 sellAmount = calculateSellAmount();
-            if (sellAmount > 0 && IERC20(address(yoloToken)).balanceOf(address(this)) >= sellAmount) {
-                _swapYoloForUsdt(sellAmount);
-            }
+            require(sellAmount > 0, "Marking: sellAmount 0");
+            require(
+                IERC20(address(yoloToken)).balanceOf(address(this)) >= sellAmount,
+                "Marking: insufficient YOLO ammo to sell"
+            );
+            _swapYoloForUsdt(sellAmount);
+            emit MarketControlSell(current, baseline, sellAmount);
             return;
         }
 
-        uint256 lower = baseline > tolerance ? baseline - tolerance : 0;
         if (current < lower) {
             // 价格偏低: 用 USDT 买 YOLO 把价格托回基准
             uint256 buyAmount = calculateBuyAmount();
+            require(buyAmount > 0, "Marking: buyAmount 0");
             uint256 usdtBal = usdtToken.balanceOf(address(this));
-            if (buyAmount > 0 && usdtBal > 0) {
-                _swapUsdtForYolo(usdtBal >= buyAmount ? buyAmount : usdtBal);
-            }
+            require(usdtBal > 0, "Marking: no USDT ammo to buy");
+            uint256 use = usdtBal >= buyAmount ? buyAmount : usdtBal;
+            _swapUsdtForYolo(use);
+            emit MarketControlBuy(current, baseline, use);
+            return;
         }
+
+        // current 在 [lower, upper] 区间内: 价格正常, 无需操作 (no-op, 不 revert 以便 keeper 周期调用)
+        emit MarketControlInBand(current, baseline);
     }
+
+    /// @dev 价格偏高, 卖出压价
+    event MarketControlSell(uint256 currentPrice, uint256 baseline, uint256 yoloSold);
+    /// @dev 价格偏低, 买入托价
+    event MarketControlBuy(uint256 currentPrice, uint256 baseline, uint256 usdtUsed);
+    /// @dev 价格在区间内, 未操作
+    event MarketControlInBand(uint256 currentPrice, uint256 baseline);
 
     /**
      * @notice 查询价格控制状态 (供 keeper 判断是否需要触发)

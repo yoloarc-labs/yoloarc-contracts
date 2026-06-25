@@ -101,6 +101,8 @@ contract MarkingTest is Test {
 
         // 8. 授予 stakeCaller 代卖权限
         marking.grantRole(marking.STAKE_ROLE(), stakeCaller);
+        // 测试合约自身 (address(this)) 是 DEFAULT_ADMIN, 授 KEEPER_ROLE 给自己以便直接调 executeMarketControl
+        marking.grantRole(marking.KEEPER_ROLE(), address(this));
 
         // 9. lpHolder 加白名单 (价格控制测试需用 lpHolder 买卖操纵池价)
         address[] memory wl2 = new address[](1);
@@ -389,15 +391,21 @@ contract MarkingTest is Test {
     }
 
     function testExecuteMarketControl_DisabledWhenBaselineZero() public {
-        // marketControlPrice 默认 0, 价格控制关闭, 不操作
-        uint256 markingYolo = yolo.balanceOf(address(marking));
+        // marketControlPrice 默认 0, 价格控制关闭, 现在 revert 暴露错误 (不再静默)
+        vm.expectRevert("Marking: marketControlPrice not set (control disabled)");
         marking.executeMarketControl();
-        assertEq(yolo.balanceOf(address(marking)), markingYolo, "no action when baseline 0");
     }
 
     function testCalcAmounts_ZeroWhenBaselineZero() public {
         assertEq(marking.calculateSellAmount(), 0, "sell amount 0 when no baseline");
         assertEq(marking.calculateBuyAmount(), 0, "buy amount 0 when no baseline");
+    }
+
+    function testExecuteMarketControl_RevertNotKeeper() public {
+        // lpHolder 无 KEEPER_ROLE, 调用应被拒
+        vm.prank(lpHolder);
+        vm.expectRevert();
+        marking.executeMarketControl();
     }
 
     // ==================== adminWithdraw 提现测试 ====================
