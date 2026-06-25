@@ -22,5 +22,6 @@ interface IUserManager {
 
     function addRefundingAmount(address user, uint256 amount) external;
     function updateUserTradingVolume(address user, uint256 amount) external;
+    function updateUserTradingVolume(address[] calldata users, uint256[] calldata amounts) external;
     function claimRefundingAmount(uint256 amount) external;
 }

@@ -121,7 +121,7 @@ contract DeployStakingScript is InitContract {
 //        _upgrade(
 //            fomoTreasureManagerProxyAdmin, address(fomoTreasureManager), address(fomoTreasureManagerImplementation)
 //        );
-        _upgrade(cardManagerProxyAdmin, address(cardManager), address(cardManagerImplementation));
+        // _upgrade(cardManagerProxyAdmin, address(cardManager), address(cardManagerImplementation));
         // _upgrade(lpManagerProxyAdmin, address(lpManager), address(lpManagerImplementation));
 
         vm.stopBroadcast();
