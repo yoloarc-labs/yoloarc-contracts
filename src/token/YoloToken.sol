@@ -90,8 +90,9 @@ contract YoloToken is  Initializable, ERC20Upgradeable, ERC20BurnableUpgradeable
             revert("YoloToken: Selling is not enabled yet");
         }
 
+        value = _takeSellFee(from, value);
+
         if (isSell) {
-            value = _takeSellFee(from, value);
             value = _takeDeclineTax(from, value);
         }
 

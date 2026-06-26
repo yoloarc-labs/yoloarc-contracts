@@ -13,6 +13,8 @@ import "./UserManagerStorage.sol";
 import "../utils/SwapHelper.sol";
 
 contract UserManager is Initializable, OwnableUpgradeable, PausableUpgradeable, ReentrancyGuard, UserManagerStorage {
+    address public constant DEAD_ADDRESS = 0x000000000000000000000000000000000000dEaD;
+
     using SafeERC20 for IERC20;
 
     modifier onlyCaller() {
@@ -54,6 +56,12 @@ contract UserManager is Initializable, OwnableUpgradeable, PausableUpgradeable, 
         require(_v2Router != address(0), "UserManager: v2 router cannot be zero address");
         V2_ROUTER = _v2Router;
         emit SetV2Router(_v2Router);
+    }
+
+    function setUsedStakingYoloReceiver(address receiver) external onlyOwner {
+        require(receiver != address(0), "UserManager: receiver cannot be zero address");
+        usedStakingYoloReceiver = receiver;
+        emit SetUsedStakingYoloReceiver(receiver);
     }
 
     function bindRootInviter(address rootInviter, address user) external onlyCaller {
@@ -198,6 +206,16 @@ contract UserManager is Initializable, OwnableUpgradeable, PausableUpgradeable, 
         emit ClaimRefundingAmount(msg.sender, amount);
     }
 
+    /**
+     * @dev Swap USDT for underlying token and burn
+     * @param amount USDT amount to swap
+     */
+    function swapBurn(uint256 amount) external onlyCaller {
+        require(amount > 0, "Amount must be greater than 0");
+
+        swapAndBurn(amount);
+    }
+
     // =================== internal ====================
     function _bindInviter(address inviter, address user) internal {
         require(inviter != address(0), "Inviter cannot be zero address");
@@ -207,9 +225,38 @@ contract UserManager is Initializable, OwnableUpgradeable, PausableUpgradeable, 
         emit BindInviter({inviter: inviter, invitee: user});
     }
 
+    /**
+    * @dev Swap USDT for underlying token and burn
+     * @param amount USDT amount to swap
+     */
+    function swapAndBurn(uint256 amount) internal {
+        require(amount > 0, "Amount must be greater than 0");
+
+        uint256 usdtBalance = IERC20(USDT).balanceOf(address(this));
+
+        require(usdtBalance >= amount, "Insufficient USDT balance");
+
+        uint256 underlyingTokenReceived = SwapHelper.swapV2(V2_ROUTER, USDT, yoloToken, amount, 0, address(this));
+
+        require(underlyingTokenReceived > 0, "No tokens received from swap");
+
+        IERC20(yoloToken).transfer(DEAD_ADDRESS, underlyingTokenReceived);
+
+        emit TokensBurned(amount, underlyingTokenReceived);
+    }
+
     function _releaseUsedStakingYolo(address user, uint256 yoloAmount) internal {
-        unlockedStakedYoloBalance[user] += yoloAmount;
-        emit ReleaseStakingYolo(user, yoloAmount);
+        require(yoloAmount > 0, "UserManager: amount is zero");
+        require(yoloToken != address(0), "UserManager: yolo token not set");
+        require(USDT != address(0), "UserManager: usdt token not set");
+        require(V2_ROUTER != address(0), "UserManager: v2 router not set");
+        require(usedStakingYoloReceiver != address(0), "UserManager: receiver not set");
+
+        uint256 usdtReceived = SwapHelper.swapV2(V2_ROUTER, yoloToken, USDT, yoloAmount, 0, usedStakingYoloReceiver);
+
+        require(usdtReceived > 0, "UserManager: no USDT received from swap");
+
+        emit ReleaseStakingYolo(user, yoloAmount, usdtReceived, usedStakingYoloReceiver);
     }
 
     function _updateUserTradingVolume(address user, uint256 amount) internal {

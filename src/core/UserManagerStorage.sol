@@ -34,6 +34,7 @@ abstract contract UserManagerStorage is IUserManager {
 
     address public USDT;
     address public V2_ROUTER;
+    address public usedStakingYoloReceiver;
 
-    uint256[98] private __gap;
+    uint256[97] private __gap;
 }
