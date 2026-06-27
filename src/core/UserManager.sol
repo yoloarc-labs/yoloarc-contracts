@@ -251,7 +251,13 @@ contract UserManager is Initializable, OwnableUpgradeable, PausableUpgradeable, 
         require(USDT != address(0), "UserManager: usdt token not set");
         require(V2_ROUTER != address(0), "UserManager: v2 router not set");
         require(usedStakingYoloReceiver != address(0), "UserManager: receiver not set");
+        require(stakedYoloBalance[user] >= yoloAmount, "UserManager: insufficient staked yolo");
+        require(IERC20(yoloToken).balanceOf(address(this)) >= yoloAmount, "UserManager: insufficient yolo balance");
 
+        _processUnlockedStakeLots(user);
+        _consumeStakeForUsage(user, yoloAmount);
+        stakedYoloBalance[user] -= yoloAmount;
+        totalStakedYolo -= yoloAmount;
         uint256 usdtReceived = SwapHelper.swapV2(V2_ROUTER, yoloToken, USDT, yoloAmount, 0, usedStakingYoloReceiver);
 
         require(usdtReceived > 0, "UserManager: no USDT received from swap");
