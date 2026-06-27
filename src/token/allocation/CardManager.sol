@@ -170,6 +170,10 @@ contract CardManager is
         return (true, _buyCards(msg.sender, quantity, amount));
     }
 
+    function freeMintCards(address receiver, uint256 quantity) external onlyOwner returns (bool, uint256[] memory) {
+        return (true, _freeMints(receiver, quantity));
+    }
+
     function tokenURI(uint256 tokenId) public view override(ERC721Upgradeable, ERC721URIStorageUpgradeable) returns (string memory) {
         require(_ownerOf(tokenId) != address(0), "ERC721Metadata: URI query for nonexistent token");
         return nftJson;
@@ -214,6 +218,19 @@ contract CardManager is
         require(amount >= totalPrice, "CardManager buyCard: amount must be more than price");
 
         IERC20(underlyingToken).safeTransferFrom(buyer, address(this), totalPrice);
+
+        tokenIds = new uint256[](quantity);
+
+        for (uint256 i = 0; i < quantity;) {
+            tokenIds[i] = _mintCard(buyer);
+            unchecked {
+                ++i;
+            }
+        }
+    }
+
+    function _freeMints(address buyer, uint256 quantity) internal returns (uint256[] memory tokenIds) {
+        require(quantity > 0, "CardManager freeMints: quantity must be greater than zero");
 
         tokenIds = new uint256[](quantity);
 
