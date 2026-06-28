@@ -5,7 +5,7 @@ import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import "../interfaces/IYoloToken.sol";
 
 abstract contract YoloTokenStorage is IYoloToken {
-    uint256 public constant MaxTotalSupply = 1_000_000_000 * 10 ** 6;
+    uint256 public constant MaxTotalSupply = 200_000_000 * 10 ** 6;
     uint256 internal constant BPS_DENOMINATOR = 10_000;
     uint256 internal constant SELL_FEE_BPS = 300;
     uint256 internal constant PRICE_DROP_3_BPS = 300;
