@@ -1,15 +1,5 @@
 # yoloarc-contracts
 
-yoloarc 体育博彩业务线的链上合约仓库. 基于 Foundry (Solidity 0.8.20, EVM prague, via_ir + optimizer) 构建, 采用可升级代理 (TransparentUpgradeableProxy) 双层架构: 主代币 + 分配管理器, 由链下合约调用层统一驱动.
-
-## 业务背景
-
-yoloarc 是一套体育博彩产品, 分后端 / H5 / 后台 / 合约四层. 本仓库是合约层, 提供:
-
-- **YOLO 代币**: 带 LP 销毁 / 下跌税阶梯 / 白名单 / Fomo 奖池机制的博彩平台代币.
-- **用户关系**: 邀请绑定 / 推荐关系, 由链下 caller (yolo-contracts-caller) 写入.
-- **分配管理器**: 卡牌分配 (CardManager) / LP 分配 (LpManager) / Fomo 奖池分发 (FomoTreasureManager).
-- **DEX 集成**: PancakeSwap V2 / V3 swap 与滑点控制.
 
 ## 目录结构
 
@@ -64,7 +54,7 @@ test/
 
 ## 代币机制
 
-- 总量上限: `1_000_000_000 * 1e6`.
+- 总量上限: `200_000_000 * 1e6`.
 - 卖单手续费: 300 bps.
 - 下跌税阶梯 (按价格跌幅触发): 跌幅 >= 3% (300 bps) 触发 1000 bps 税, 跌幅 >= 6% (600 bps) 触发 2000 bps 税.
 - 白名单 (`whiteList`) 地址免手续费.
@@ -93,11 +83,3 @@ forge script script/DeployStakingScript.sol:DeployStakingScript --rpc-url <rpc> 
 
 克隆后需初始化子模块: `git submodule update --init --recursive`.
 
-## 相关仓库
-
-本仓库是 `dapplink-external` 组织下 yoloarc 业务线的一部分, 与以下仓库协作:
-
-- `yoloarc-services` - 体育博彩后端 (Go)
-- `yoloarc-dapp` - 体育博彩 H5 (Vite + Vue + wagmi)
-- `yoloarc-admin` - 体育博彩后台 (Vue3 + Element Plus)
-- `yolo-contracts-caller` - 合约调用服务 (Go, 通过 contractCaller 地址驱动本合约)
