@@ -90,9 +90,8 @@ contract YoloToken is  Initializable, ERC20Upgradeable, ERC20BurnableUpgradeable
             revert("YoloToken: Selling is not enabled yet");
         }
 
-        value = _takeSellFee(from, value);
-
         if (isSell) {
+            value = _takeSellFee(from, value);
             value = _takeDeclineTax(from, value);
         }
 
@@ -179,8 +178,8 @@ contract YoloToken is  Initializable, ERC20Upgradeable, ERC20BurnableUpgradeable
 
     function poolAllocate() external onlyOperator {
         _beforeAllocation();
-        _mint(cmPool.lpPool, (MaxTotalSupply * 40) / 100);
-        _mint(cmPool.cardPool, (MaxTotalSupply * 60) / 100);
+        _mint(cmPool.lpPool, (MaxTotalSupply * 20) / 100);
+        _mint(cmPool.cardPool, (MaxTotalSupply * 80) / 100);
 
         isAllocation = true;
     }

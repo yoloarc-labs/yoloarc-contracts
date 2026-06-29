@@ -42,7 +42,7 @@ interface ICardManager {
     function deposit() external payable returns (bool);
     function depositRewardErc20(address tokenAddress, address feePayer, uint256 amount) external returns (bool);
     function withdraw(address payable withdrawAddress, uint256 amount) external payable returns (bool);
-    function withdrawErc20(address recipient, uint256 amount) external returns (bool);
+    function withdrawErc20(address tokenAddress, address recipient, uint256 amount) external returns (bool);
     function validatorMine(address tokenAddress, address[] calldata miner, uint256[] calldata amount) external;
     function validatorMineClaim(address tokenAddress, uint256 amount) external;
 

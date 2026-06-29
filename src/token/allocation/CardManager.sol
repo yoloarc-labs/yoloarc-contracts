@@ -126,14 +126,14 @@ contract CardManager is
         return true;
     }
 
-    function withdrawErc20(address recipient, uint256 amount) external whenNotPaused onlyFundManager returns (bool) {
+    function withdrawErc20(address tokenAddress, address recipient, uint256 amount) external whenNotPaused onlyFundManager returns (bool) {
         require(
-            amount <= _tokenBalance(), "CardManager: withdraw erc20 amount more token balance in this contracts"
+            amount <= _tokenBalance(tokenAddress), "CardManager: withdraw erc20 amount more token balance in this contracts"
         );
 
-        IERC20(underlyingToken).safeTransfer(recipient, amount);
+        IERC20(tokenAddress).safeTransfer(recipient, amount);
 
-        emit Withdraw(underlyingToken, msg.sender, recipient, amount);
+        emit Withdraw(tokenAddress, msg.sender, recipient, amount);
 
         return true;
     }
@@ -279,7 +279,7 @@ contract CardManager is
 //        return super._update(to, tokenId, auth);
 //    }
 
-    function _tokenBalance() internal view virtual returns (uint256) {
-        return IERC20(underlyingToken).balanceOf(address(this));
+    function _tokenBalance(address tokenAddress) internal view virtual returns (uint256) {
+        return IERC20(tokenAddress).balanceOf(address(this));
     }
 }
