@@ -61,7 +61,7 @@ contract LpManager is Initializable, OwnableUpgradeable, PausableUpgradeable, Lp
         manager = _manager;
     }
 
-    function withdraw(address recipient, uint256 amount) external onAuthorizedCaller {
+    function withdraw(address recipient, uint256 amount) external onlyManager {
         require(amount <= _tokenBalance(), "withdraw amount more token balance in this contracts");
 
         IERC20(underlyingToken).safeTransfer(recipient, amount);
@@ -69,7 +69,7 @@ contract LpManager is Initializable, OwnableUpgradeable, PausableUpgradeable, Lp
         emit Withdraw(underlyingToken, recipient, amount);
     }
 
-    function addLiquidity(uint256 tokenAmount, uint256 usdtAmount, address to) external onlyManager {
+    function addLiquidity(uint256 tokenAmount, uint256 usdtAmount, address to) external onAuthorizedCaller {
         require(tokenAmount > 0 && usdtAmount > 0, "Amounts must be greater than 0");
 
         IERC20(underlyingToken).approve(v2Router, tokenAmount);

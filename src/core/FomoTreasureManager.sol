@@ -46,7 +46,7 @@ contract FomoTreasureManager is Initializable, OwnableUpgradeable, PausableUpgra
         rewardTokenAddress = _rewardTokenAddress;
     }
 
-    function setAuthorizedCaller(address caller, bool authorized) external onlyManager {
+    function setAuthorizedCaller(address caller, bool authorized) external onlyOwner {
         if (authorized) {
             authorizedCallers.add(caller);
         } else {
@@ -58,7 +58,7 @@ contract FomoTreasureManager is Initializable, OwnableUpgradeable, PausableUpgra
         return EnumerableSet.values(authorizedCallers);
     }
 
-    function withdrawErc20(address tokenAddress, address recipient, uint256 amount) external onlyAuthorizedCaller {
+    function withdrawErc20(address tokenAddress, address recipient, uint256 amount) external onlyManager {
         require(amount <= IERC20(tokenAddress).balanceOf(address(this)), "DaoRewardManager: withdrawErc20 amount more token balance in this contracts");
         IERC20(tokenAddress).safeTransfer(recipient, amount);
     }

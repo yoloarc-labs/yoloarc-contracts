@@ -116,13 +116,13 @@ contract DeployStakingScript is InitContract {
         cardManagerImplementation = new CardManager();
         lpManagerImplementation = new LpManager();
 
-        _upgrade(yoloTokenProxyAdmin, address(yoloToken), address(yoloTokenImplementation));
+//        _upgrade(yoloTokenProxyAdmin, address(yoloToken), address(yoloTokenImplementation));
 //        _upgrade(userManagerProxyAdmin, address(userManager), address(userManagerImplementation));
-//        _upgrade(
-//            fomoTreasureManagerProxyAdmin, address(fomoTreasureManager), address(fomoTreasureManagerImplementation)
-//        );
+        _upgrade(
+            fomoTreasureManagerProxyAdmin, address(fomoTreasureManager), address(fomoTreasureManagerImplementation)
+        );
 //         _upgrade(cardManagerProxyAdmin, address(cardManager), address(cardManagerImplementation));
-//        _upgrade(lpManagerProxyAdmin, address(lpManager), address(lpManagerImplementation));
+        _upgrade(lpManagerProxyAdmin, address(lpManager), address(lpManagerImplementation));
 
         vm.stopBroadcast();
 
